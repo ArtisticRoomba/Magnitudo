@@ -1,0 +1,20 @@
+bin/
+obj/
+artifacts/
+BenchmarkDotNet.Artifacts/
+
+# IDE files
+.idea/
+riderModule.iml
+/_ReSharper.Caches/
+.vs/
+*.user
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+
+# EmitCompilerGeneratedFiles debugging output for source generators.
+GeneratedFiles/
+
+# Personal agent instructions
+CLAUDE.local.md

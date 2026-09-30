@@ -1,0 +1,8 @@
+<Solution>
+    <Folder Name="/Tests/">
+        <Project Path="tests\Numos.Units.Analyzers.Tests\Numos.Units.Analyzers.Tests.csproj"/>
+    </Folder>
+
+    <Project Path="src\Numos.Units\Numos.Units.csproj"/>
+    <Project Path="src\Numos.Units.Analyzers\Numos.Units.Analyzers.csproj"/>
+</Solution>
