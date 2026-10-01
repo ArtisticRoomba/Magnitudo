@@ -8,7 +8,7 @@
         <IsTestProject>true</IsTestProject>
         <IsAotCompatible>false</IsAotCompatible>
         <IsTrimmable>false</IsTrimmable>
-        <RootNamespace>Numos.Units.Analyzers.Tests</RootNamespace>
+        <RootNamespace>Metron.Analyzers.Tests</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>
@@ -22,8 +22,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\Numos.Units\Numos.Units.csproj"/>
-        <ProjectReference Include="..\..\src\Numos.Units.Analyzers\Numos.Units.Analyzers.csproj"/>
+        <ProjectReference Include="..\..\src\Metron\Metron.csproj"/>
+        <ProjectReference Include="..\..\src\Metron.Analyzers\Metron.Analyzers.csproj"/>
     </ItemGroup>
 
     <ItemGroup>

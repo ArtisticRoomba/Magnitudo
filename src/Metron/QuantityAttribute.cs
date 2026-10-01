@@ -1,4 +1,4 @@
-namespace Numos.Units;
+namespace Metron;
 
 /// <summary>
 ///     Associates a primitive numeric declaration with a quantity from the consuming project's unit catalog.
@@ -21,6 +21,6 @@ public sealed class QuantityAttribute : Attribute
         Id = id;
     }
 
-    /// <summary>The stable identifier used in a <c>*.numosunits</c> catalog.</summary>
+    /// <summary>The stable identifier used in a <c>*.metron</c> catalog.</summary>
     public string Id { get; }
 }

@@ -1,36 +1,39 @@
-# Numos.Units
+# Π METRON
 
-Compile-time dimensional analysis for C#. You describe your quantities in a catalog file, a source generator turns
-each one into a `global using` alias (`Kelvin`, `Pascal`, and so on), and an analyzer fails the build when an
-expression mixes dimensions that don't fit, like adding a pressure to a temperature.
+Dimensional Analysis for .NET
+
+Metron is a .NET library for representing physical quantities, dimensions, and units, with dimensional consistency
+checked at compile time. You describe your quantities in a catalog file, a source generator turns each one into a
+`global using` alias (`Kelvin`, `Pascal`, and so on), and an analyzer fails the build when an expression mixes
+dimensions that don't fit, like adding a pressure to a temperature.
 
 The aliases are erased. `Kelvin` is still a `float` in the compiled assembly, so there is no wrapper type, no runtime
 cost, and nothing that gets in the way of Native AOT or trimming.
 
-It was split out of [Numos](https://github.com/ArtisticRoomba/Numos), which still uses it.
+Metron originated as the dimensional-analysis system used by the [Numos](https://github.com/ArtisticRoomba/Numos) atmospherics simulator and was later separated into a general-purpose library. Numos depends on it.
 
 ## Install
 
 ```bash
-dotnet add package Numos.Units --prerelease
-dotnet add package Numos.Units.Analyzers --prerelease
+dotnet add package Metron --prerelease
+dotnet add package Metron.Analyzers --prerelease
 ```
 
-`Numos.Units` holds the `[Quantity]` and `[ElementQuantity]` attributes. `Numos.Units.Analyzers` is a development
+`Metron` holds the `[Quantity]` and `[ElementQuantity]` attributes. `Metron.Analyzers` is a development
 dependency, so reference it with `PrivateAssets="all"` and it won't flow to your consumers:
 
 ```xml
-<PackageReference Include="Numos.Units" Version="0.2.0-alpha.1"/>
-<PackageReference Include="Numos.Units.Analyzers" Version="0.2.0-alpha.1" PrivateAssets="all"/>
+<PackageReference Include="Metron" Version="0.2.0-alpha.1"/>
+<PackageReference Include="Metron.Analyzers" Version="0.2.0-alpha.1" PrivateAssets="all"/>
 ```
 
 ## Add a catalog
 
-Put your quantities in a `*.numosunits` file and include it as an `AdditionalFiles` item:
+Put your quantities in a `*.metron` file and include it as an `AdditionalFiles` item:
 
 ```xml
 <ItemGroup>
-    <AdditionalFiles Include="MyProject.numosunits"/>
+    <AdditionalFiles Include="MyProject.metron"/>
 </ItemGroup>
 ```
 
@@ -39,15 +42,15 @@ temperature | Kelvin | global::System.Single | temperature=1
 pressure    | Pascal | global::System.Single | mass=1,length=-1,time=-2
 ```
 
-The catalog format, source annotations, and diagnostics (`NUMOSUNIT000` to `NUMOSUNIT004`) are described in
+The catalog format, source annotations, and diagnostics (`METRON000` to `METRON004`) are described in
 [docs/dimensional_analysis.md](docs/dimensional_analysis.md).
 
 ## Build, test, pack
 
 ```bash
-dotnet build Numos.Units.slnx -c Release -warnaserror
-dotnet test Numos.Units.slnx -c Release
-dotnet pack Numos.Units.slnx -c Release
+dotnet build Metron.slnx -c Release -warnaserror
+dotnet test Metron.slnx -c Release
+dotnet pack Metron.slnx -c Release
 ```
 
 Packages land in `artifacts/packages`. Versions for both packages come from `Version.props`.

@@ -4,7 +4,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
 
-namespace Numos.Units.Analyzers.Tests;
+namespace Metron.Analyzers.Tests;
 
 [TestFixture]
 public sealed class DimensionalAnalysisAnalyzerTests
@@ -51,7 +51,7 @@ public sealed class DimensionalAnalysisAnalyzerTests
 
         ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
 
-        var diagnostic = diagnostics.Single(item => item.Id == "NUMOSUNIT002");
+        var diagnostic = diagnostics.Single(item => item.Id == "METRON002");
         Assert.That(
             diagnostic.GetMessage(),
             Is.EqualTo("Cannot assign 'length^-1 mass^1 time^-2' to 'temperature'"));
@@ -79,11 +79,11 @@ public sealed class DimensionalAnalysisAnalyzerTests
         {
             Assert.That(
                 diagnostics.Select(diagnostic => diagnostic.Id),
-                Does.Contain("NUMOSUNIT001"));
+                Does.Contain("METRON001"));
 
             Assert.That(
                 diagnostics.Select(diagnostic => diagnostic.Id),
-                Does.Contain("NUMOSUNIT003"));
+                Does.Contain("METRON003"));
         });
     }
 
@@ -108,7 +108,7 @@ public sealed class DimensionalAnalysisAnalyzerTests
     public async Task GeneratedConversionCarriesItsCanonicalQuantity()
     {
         const string source = """
-                              using Numos.Units.Generated;
+                              using Metron.Generated;
 
                               internal static class Inputs
                               {
@@ -125,7 +125,7 @@ public sealed class DimensionalAnalysisAnalyzerTests
 
         Assert.That(
             diagnostics.Select(diagnostic => diagnostic.Id),
-            Is.EquivalentTo(new[] { "NUMOSUNIT004" }));
+            Is.EquivalentTo(new[] { "METRON004" }));
     }
 
     [Test]
@@ -155,7 +155,7 @@ public sealed class DimensionalAnalysisAnalyzerTests
 
     private static async Task<ImmutableArray<Diagnostic>> Analyze(string source, string catalog)
     {
-        var additionalText = new InMemoryAdditionalText("Test.numosunits", catalog);
+        var additionalText = new InMemoryAdditionalText("Test.metron", catalog);
         var compilation = GenerateAliases(
             CreateCompilation(source),
             catalog,
@@ -175,7 +175,7 @@ public sealed class DimensionalAnalysisAnalyzerTests
         CSharpCompilation compilation, string catalog,
         out ImmutableArray<Diagnostic> diagnostics)
     {
-        var additionalText = new InMemoryAdditionalText("Test.numosunits", catalog);
+        var additionalText = new InMemoryAdditionalText("Test.metron", catalog);
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             [new QuantityAliasGenerator().AsSourceGenerator()],
             [additionalText],
