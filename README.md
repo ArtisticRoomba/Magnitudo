@@ -56,4 +56,4 @@ Packages land in `artifacts/packages`. Versions for both packages come from `Ver
 
 ## License
 
-MIT, see `LICENSE.TXT`.
+Metron is licensed under the MIT license. See LICENSE.TXT for more info.
