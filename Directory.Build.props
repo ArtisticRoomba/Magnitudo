@@ -5,12 +5,12 @@
         <IsAotCompatible>true</IsAotCompatible>
         <IsTrimmable>true</IsTrimmable>
 
-        <Authors>VeritableCalamity;ArtisticRoomba;Metron contributors</Authors>
-        <Company>Metron contributors</Company>
-        <Copyright>Copyright © 2026 VeritableCalamity; Copyright © 2026 ArtisticRoomba; Copyright © 2026 Metron contributors</Copyright>
+        <Authors>VeritableCalamity;ArtisticRoomba;Quantitas contributors</Authors>
+        <Company>Quantitas contributors</Company>
+        <Copyright>Copyright © 2026 VeritableCalamity; Copyright © 2026 ArtisticRoomba; Copyright © 2026 Quantitas contributors</Copyright>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
-        <PackageProjectUrl>https://github.com/ArtisticRoomba/Metron</PackageProjectUrl>
-        <RepositoryUrl>https://github.com/ArtisticRoomba/Metron</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/ArtisticRoomba/Quantitas</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/ArtisticRoomba/Quantitas</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
         <EmbedUntrackedSources>true</EmbedUntrackedSources>

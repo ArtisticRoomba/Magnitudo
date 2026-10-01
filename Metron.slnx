@@ -1,8 +1,0 @@
-<Solution>
-    <Folder Name="/Tests/">
-        <Project Path="tests\Metron.Analyzers.Tests\Metron.Analyzers.Tests.csproj"/>
-    </Folder>
-
-    <Project Path="src\Metron\Metron.csproj"/>
-    <Project Path="src\Metron.Analyzers\Metron.Analyzers.csproj"/>
-</Solution>

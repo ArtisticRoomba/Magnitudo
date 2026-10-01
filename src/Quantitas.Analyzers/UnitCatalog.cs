@@ -3,7 +3,7 @@ using System.Globalization;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
-namespace Metron.Analyzers;
+namespace Quantitas.Analyzers;
 
 internal sealed class UnitCatalog
 {
@@ -51,7 +51,7 @@ internal sealed class UnitCatalog
         var aliases = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var file in files.Where(file =>
-                     file.Path.EndsWith(".metron", StringComparison.OrdinalIgnoreCase)))
+                     file.Path.EndsWith(".quantitas", StringComparison.OrdinalIgnoreCase)))
         {
             var text = file.GetText(cancellationToken);
             if (text is null)

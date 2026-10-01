@@ -4,10 +4,10 @@
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <RootNamespace>Metron</RootNamespace>
-        <PackageId>Metron</PackageId>
-        <Title>Metron</Title>
-        <Description>Compile-time quantity annotations for Metron dimensional analysis.</Description>
+        <RootNamespace>Quantitas</RootNamespace>
+        <PackageId>Quantitas</PackageId>
+        <Title>Quantitas</Title>
+        <Description>Compile-time quantity annotations for Quantitas dimensional analysis.</Description>
         <PackageTags>units;dimensional-analysis;nativeaot</PackageTags>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
     </PropertyGroup>

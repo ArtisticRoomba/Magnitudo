@@ -1,13 +1,13 @@
 using Microsoft.CodeAnalysis;
 
-namespace Metron.Analyzers;
+namespace Quantitas.Analyzers;
 
 internal static class Diagnostics
 {
     private const string Category = "DimensionalAnalysis";
 
     internal readonly static DiagnosticDescriptor InvalidCatalog = new(
-        "METRON000",
+        "QNT000",
         "Invalid units catalog",
         "Invalid units catalog: {0}",
         Category,
@@ -15,7 +15,7 @@ internal static class Diagnostics
         true);
 
     internal readonly static DiagnosticDescriptor IncompatibleOperands = new(
-        "METRON001",
+        "QNT001",
         "Incompatible quantities",
         "Operator '{0}' cannot combine '{1}' and '{2}'",
         Category,
@@ -23,7 +23,7 @@ internal static class Diagnostics
         true);
 
     internal readonly static DiagnosticDescriptor IncompatibleAssignment = new(
-        "METRON002",
+        "QNT002",
         "Incompatible quantity assignment",
         "Cannot assign '{0}' to '{1}'",
         Category,
@@ -31,7 +31,7 @@ internal static class Diagnostics
         true);
 
     internal readonly static DiagnosticDescriptor IncompatibleArgument = new(
-        "METRON003",
+        "QNT003",
         "Incompatible argument quantity",
         "Argument has quantity '{0}', but parameter '{1}' requires '{2}'",
         Category,
@@ -39,7 +39,7 @@ internal static class Diagnostics
         true);
 
     internal readonly static DiagnosticDescriptor IncompatibleReturn = new(
-        "METRON004",
+        "QNT004",
         "Incompatible return quantity",
         "Returned expression has quantity '{0}', but the method returns '{1}'",
         Category,

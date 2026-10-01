@@ -4,7 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Operations;
 
-namespace Metron.Analyzers;
+namespace Quantitas.Analyzers;
 
 /// <summary>Checks dimensional compatibility while leaving all runtime numeric types unchanged.</summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -49,8 +49,8 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
 
     private sealed class QuantityAnalysis
     {
-        private const string QuantityAttributeName = "Metron.QuantityAttribute";
-        private const string ElementQuantityAttributeName = "Metron.ElementQuantityAttribute";
+        private const string QuantityAttributeName = "Quantitas.QuantityAttribute";
+        private const string ElementQuantityAttributeName = "Quantitas.ElementQuantityAttribute";
         private readonly UnitCatalog _catalog;
 
         private readonly Compilation _compilation;

@@ -1,12 +1,12 @@
 # The catalog
 
-A catalog is a text file with the `.metron` extension. It declares the quantities your project uses and, optionally,
-the external units you convert from and to. Metron reads every `.metron` file passed to the compiler as an
+A catalog is a text file with the `.quantitas` extension. It declares the quantities your project uses and, optionally,
+the external units you convert from and to. Quantitas reads every `.quantitas` file passed to the compiler as an
 `AdditionalFiles` item, merges them into one catalog, and generates one `global using` alias per quantity.
 
 ```xml
 <ItemGroup>
-    <AdditionalFiles Include="MyProject.metron"/>
+    <AdditionalFiles Include="MyProject.quantitas"/>
 </ItemGroup>
 ```
 
@@ -43,7 +43,7 @@ stableId | Alias | global::System.Single | baseDimension=exponent,...
 | --- | --- |
 | `stableId` | An identifier. The name `[Quantity("...")]` uses to refer to this line. |
 | `Alias` | An identifier. Becomes the alias you write in code. Unique across the catalog. |
-| storage type | Any type name. Emitted verbatim on the right side of the alias. Not checked by Metron. |
+| storage type | Any type name. Emitted verbatim on the right side of the alias. Not checked by Quantitas. |
 | dimensions | Comma-separated `name=exponent` pairs. Exponents are integers. `1` or an empty field means dimensionless. |
 
 An identifier starts with a letter or `_` and continues with letters, digits or `_`. A zero exponent is dropped, so
@@ -75,7 +75,7 @@ Lines starting with `#` and blank lines are ignored.
 
 ### What gets generated
 
-For each quantity, one line in `Metron.QuantityAliases.g.cs`:
+For each quantity, one line in `Quantitas.QuantityAliases.g.cs`:
 
 ```csharp
 global using Kelvin = global::System.Single;
@@ -85,7 +85,7 @@ global using Metre = global::System.Single;
 
 An alias is a compile-time name. `Kelvin` is `System.Single` in the compiled assembly, so `Kelvin[]` is a `float[]`,
 arithmetic is ordinary float arithmetic, and nothing is boxed or wrapped. The same holds for Native AOT and trimming:
-there is no Metron type left at runtime.
+there is no Quantitas type left at runtime.
 
 The converse is that the C# compiler doesn't distinguish `Kelvin` from `Pascal`. Only the analyzer does.
 
@@ -122,7 +122,7 @@ $$
 c = x \cdot s + b
 $$
 
-where $s$ is `scale` and $b$ is `offset`. Metron emits both directions:
+where $s$ is `scale` and $b$ is `offset`. Quantitas emits both directions:
 
 | Method | Computes |
 | --- | --- |
@@ -140,15 +140,15 @@ convert | temperature | Fahrenheit | global::System.Single | 0.5555556 | 255.372
 the generator adds:
 
 ```csharp
-namespace Metron.Generated
+namespace Quantitas.Generated
 {
     public static class UnitConversions
     {
-        [return: global::Metron.QuantityAttribute("temperature")]
+        [return: global::Quantitas.QuantityAttribute("temperature")]
         public static global::System.Single FromCelsius(global::System.Single value) => value * 1.0f + 273.15f;
 
         public static global::System.Single ToCelsius(
-            [global::Metron.QuantityAttribute("temperature")] global::System.Single value) => (value - 273.15f) / 1.0f;
+            [global::Quantitas.QuantityAttribute("temperature")] global::System.Single value) => (value - 273.15f) / 1.0f;
 
         // FromFahrenheit and ToFahrenheit follow the same shape.
     }
@@ -158,8 +158,8 @@ namespace Metron.Generated
 Number literals take an `f` suffix when the storage type ends in `Single` and a `d` suffix otherwise.
 
 The `[Quantity]` attributes on the generated methods are what let the analyzer follow a value across the boundary.
-`FromCelsius(20f)` is a `temperature`; passing a `Pascal` to `ToCelsius` is a [METRON003](diagnostics.md#metron003).
-`Metron.Generated.UnitConversions` is public, so it needs the `Metron` package referenced for the attribute type.
+`FromCelsius(20f)` is a `temperature`; passing a `Pascal` to `ToCelsius` is a [QNT003](diagnostics.md#qnt003).
+`Quantitas.Generated.UnitConversions` is public, so it needs the `Quantitas` package referenced for the attribute type.
 
 Conversions are meant for the edge of a program: reading a sensor, parsing user input, printing a result. Inside, work
 in canonical units. Because the formula is affine, `FromCelsius(a) - FromCelsius(b)` is a difference in kelvin, which
@@ -168,7 +168,7 @@ tell is meaningless.
 
 ## Catalog errors
 
-A malformed line is reported as [METRON000](diagnostics.md#metron000), with the location of the line, and skipped. The
+A malformed line is reported as [QNT000](diagnostics.md#qnt000), with the location of the line, and skipped. The
 rest of the catalog still loads, so one typo doesn't turn every alias into a missing-type error. It will still produce
 errors wherever the skipped alias is used.
 

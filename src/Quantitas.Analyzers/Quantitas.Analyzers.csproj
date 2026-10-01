@@ -6,9 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
-        <RootNamespace>Metron.Analyzers</RootNamespace>
-        <PackageId>Metron.Analyzers</PackageId>
-        <Title>Metron Analyzers</Title>
+        <RootNamespace>Quantitas.Analyzers</RootNamespace>
+        <PackageId>Quantitas.Analyzers</PackageId>
+        <Title>Quantitas Analyzers</Title>
         <Description>Dimensional analysis and quantity alias generation for C#.</Description>
         <PackageTags>roslyn;analyzer;units;dimensional-analysis</PackageTags>
         <DevelopmentDependency>true</DevelopmentDependency>

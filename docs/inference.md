@@ -63,12 +63,12 @@ that dimension.
 | --- | --- | --- |
 | `a * b` | $[a][b]$ | No constraint |
 | `a / b` | $[a][b]^{-1}$ | No constraint |
-| `a + b`, `a - b` | The common dimension | [METRON001](diagnostics.md#metron001) if they differ |
-| `==`, `!=`, `<`, `<=`, `>`, `>=` | Not a quantity | METRON001 if the operands differ |
+| `a + b`, `a - b` | The common dimension | [QNT001](diagnostics.md#qnt001) if they differ |
+| `==`, `!=`, `<`, `<=`, `>`, `>=` | Not a quantity | QNT001 if the operands differ |
 | `-a`, `+a` | $[a]$ | |
 | `(a)`, `(float)a`, `(Kelvin)x` | Same as the operand | |
 | `c ? a : b`, `a ?? b` | The common dimension, otherwise unknown | |
-| `Math.Abs`, `Clamp`, `CopySign`, `Max`, `MaxMagnitude`, `Min`, `MinMagnitude` (also on `MathF`) | The common dimension of the arguments | METRON003 if arguments differ |
+| `Math.Abs`, `Clamp`, `CopySign`, `Max`, `MaxMagnitude`, `Min`, `MinMagnitude` (also on `MathF`) | The common dimension of the arguments | QNT003 if arguments differ |
 | Call to a method with a declared return quantity | That quantity | |
 | Anything else | Unknown | |
 
@@ -77,7 +77,7 @@ exponents add up to. A bad formula therefore shows up where the result meets a d
 
 ```csharp
 internal static Newton Force(Kilogram m, Metre d, Second t) => m * d / t;
-// METRON004: Returned expression has quantity 'length^1 mass^1 time^-1',
+// QNT004: Returned expression has quantity 'length^1 mass^1 time^-1',
 //            but the method returns 'length^1 mass^1 time^-2'
 ```
 
@@ -85,7 +85,7 @@ And `x * x` is not an error either; it's `length^2`:
 
 ```csharp
 internal static Metre Wrong(Metre d) => d * d;
-// METRON004: Returned expression has quantity 'length^2', but the method returns 'length'
+// QNT004: Returned expression has quantity 'length^2', but the method returns 'length'
 ```
 
 ### Literals and dimensionless values
@@ -103,7 +103,7 @@ It does not get the literal's free pass in sums or assignments:
 ```csharp
 internal static Metre Scale(Metre d, Ratio r) => d * r;    // fine
 internal static Metre Shift(Metre d, Ratio r) => d + r;
-// METRON001: Operator '+' cannot combine 'length' and 'dimensionless'
+// QNT001: Operator '+' cannot combine 'length' and 'dimensionless'
 ```
 
 ## What a declaration accepts
@@ -120,7 +120,7 @@ Two asymmetries are worth understanding:
 
 **An unannotated value can be assigned to a quantity, but not passed as one.** `Kelvin t = raw;` is accepted, since
 that's how a value gets its unit in the first place. `Accept(raw)` where `Accept` takes a `Kelvin` is
-[METRON003](diagnostics.md#metron003). The assignment is a deliberate "this is a temperature" claim by the author; a
+[QNT003](diagnostics.md#qnt003). The assignment is a deliberate "this is a temperature" claim by the author; a
 call site is more likely to be a mistake or a missing annotation.
 
 **A quantity can't silently become an unannotated value.** Writing `float x = pressure;` or `var x = pressure;` would
@@ -128,10 +128,10 @@ lose the unit, so the analyzer rejects it and asks you to name the type you mean
 
 ```csharp
 float x = pressure;
-// METRON002: Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'
+// QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'
 
 var y = pressure;
-// METRON002: Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'
+// QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'
 
 Pascal z = pressure;   // fine
 ```
@@ -147,8 +147,8 @@ it in a typed local until then.
 the target's, so only dimensionless factors are allowed:
 
 ```csharp
-distance += time;       // METRON002: Cannot assign 'time' to 'length'
-distance *= time;       // METRON002: Cannot assign 'length^1 time^1' to 'length'
+distance += time;       // QNT002: Cannot assign 'time' to 'length'
+distance *= time;       // QNT002: Cannot assign 'length^1 time^1' to 'length'
 distance *= 2f;         // fine
 distance *= ratio;      // fine
 ```
@@ -183,7 +183,7 @@ reasons a mistake gets through.
 ### Same dimension, different meaning
 
 Quantities are compared by exponent vector alone. Torque and energy are both $M\,L^2\,T^{-2}$, frequency and
-radioactivity are both $T^{-1}$, and Metron can't tell them apart:
+radioactivity are both $T^{-1}$, and Quantitas can't tell them apart:
 
 ```text
 energy | Joule      | global::System.Single | mass=1,length=2,time=-2
@@ -203,7 +203,7 @@ Assigning a quantity to a discard is reported, with an odd message, because the 
 
 ```csharp
 _ = pressure;
-// METRON002: Cannot assign 'length^-1 mass^1 time^-2' to 'numeric literal'
+// QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'numeric literal'
 ```
 
 If you need to mark a value as used, assign it to a typed local instead.

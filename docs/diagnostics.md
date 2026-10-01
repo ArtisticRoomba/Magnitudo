@@ -1,14 +1,14 @@
 # Diagnostics
 
-Metron reports five diagnostics. All are errors, in the category `DimensionalAnalysis`, and all are on by default.
+Quantitas reports five diagnostics. All are errors, in the category `DimensionalAnalysis`, and all are on by default.
 
 | Id | Title | Reported when |
 | --- | --- | --- |
-| [`METRON000`](#metron000) | Invalid units catalog | A `.metron` file can't be parsed or defines an invalid quantity or conversion. |
-| [`METRON001`](#metron001) | Incompatible quantities | `+`, `-` or a comparison combines two operands with different dimensions. |
-| [`METRON002`](#metron002) | Incompatible quantity assignment | A value is assigned to a target with a different quantity. |
-| [`METRON003`](#metron003) | Incompatible argument quantity | An argument's quantity doesn't match the parameter's. |
-| [`METRON004`](#metron004) | Incompatible return quantity | A returned value's quantity doesn't match the method's. |
+| [`QNT000`](#qnt000) | Invalid units catalog | A `.quantitas` file can't be parsed or defines an invalid quantity or conversion. |
+| [`QNT001`](#qnt001) | Incompatible quantities | `+`, `-` or a comparison combines two operands with different dimensions. |
+| [`QNT002`](#qnt002) | Incompatible quantity assignment | A value is assigned to a target with a different quantity. |
+| [`QNT003`](#qnt003) | Incompatible argument quantity | An argument's quantity doesn't match the parameter's. |
+| [`QNT004`](#qnt004) | Incompatible return quantity | A returned value's quantity doesn't match the method's. |
 
 The examples below use this catalog:
 
@@ -45,7 +45,7 @@ quickest check is to work it out by hand: $[\text{Pascal}] = M\,L^{-1}\,T^{-2}$ 
 
 ---
 
-## METRON001
+## QNT001
 
 **Incompatible quantities.** `Operator '{0}' cannot combine '{1}' and '{2}'`
 
@@ -62,7 +62,7 @@ internal static float Total(Pascal pressure, Kelvin temperature)
 ```
 
 ```text
-error METRON001: Operator '+' cannot combine 'length^-1 mass^1 time^-2' and 'temperature'
+error QNT001: Operator '+' cannot combine 'length^-1 mass^1 time^-2' and 'temperature'
 ```
 
 There is no mechanical fix; the expression is wrong. Pressure and temperature are related through the ideal gas law,
@@ -80,7 +80,7 @@ internal static bool Reached(Metre distance, Second elapsed)
 ```
 
 ```text
-error METRON001: Operator '==' cannot combine 'length' and 'time'
+error QNT001: Operator '==' cannot combine 'length' and 'time'
 ```
 
 A comparison against a literal is fine, since the literal takes the other side's quantity: `distance > 0f`.
@@ -95,7 +95,7 @@ internal static Metre Shift(Metre d, Ratio r) => d + r;
 ```
 
 ```text
-error METRON001: Operator '+' cannot combine 'length' and 'dimensionless'
+error QNT001: Operator '+' cannot combine 'length' and 'dimensionless'
 ```
 
 Multiplying is allowed: `d * r` is a `length`.
@@ -112,12 +112,12 @@ internal static float Bad() => Heights[0] + _elapsed;
 ```
 
 ```text
-error METRON001: Operator '+' cannot combine 'length' and 'time'
+error QNT001: Operator '+' cannot combine 'length' and 'time'
 ```
 
 ---
 
-## METRON002
+## QNT002
 
 **Incompatible quantity assignment.** `Cannot assign '{0}' to '{1}'`
 
@@ -134,7 +134,7 @@ internal static void Update(Pascal pressure)
 ```
 
 ```text
-error METRON002: Cannot assign 'length^-1 mass^1 time^-2' to 'temperature'
+error QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'temperature'
 ```
 
 Fields, properties, array elements and list elements behave the same way:
@@ -176,8 +176,8 @@ internal static void Report(Pascal pressure)
 ```
 
 ```text
-error METRON002: Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'
-error METRON002: Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'
+error QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'
+error QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'
 ```
 
 Declare the type with the alias: `Pascal inferred = pressure;`. The converse is allowed. `Kelvin t = 293.15f;` and
@@ -200,7 +200,7 @@ internal static void Move(Metre d, Second t)
 ```
 
 ```text
-error METRON002: Cannot assign 'length^1 time^-1' to 'length'
+error QNT002: Cannot assign 'length^1 time^-1' to 'length'
 ```
 
 Change the target to `MetrePerSecond`.
@@ -212,7 +212,7 @@ analyzer reads a discard as a literal. Assign to a typed local instead.
 
 ---
 
-## METRON003
+## QNT003
 
 **Incompatible argument quantity.** `Argument has quantity '{0}', but parameter '{1}' requires '{2}'`
 
@@ -230,7 +230,7 @@ internal static void Run(Pascal pressure)
 ```
 
 ```text
-error METRON003: Argument has quantity 'length^-1 mass^1 time^-2', but parameter 'value' requires 'temperature'
+error QNT003: Argument has quantity 'length^-1 mass^1 time^-2', but parameter 'value' requires 'temperature'
 ```
 
 ### Passing an unannotated value
@@ -246,7 +246,7 @@ internal static void Run(float raw)
 ```
 
 ```text
-error METRON003: Argument has quantity 'unannotated scalar', but parameter 'value' requires 'temperature'
+error QNT003: Argument has quantity 'unannotated scalar', but parameter 'value' requires 'temperature'
 ```
 
 Either annotate `raw` at its source, or state the claim with a typed local: `Kelvin t = raw; SetTarget(t);`.
@@ -268,7 +268,7 @@ internal static void Run()
 ```
 
 ```text
-error METRON003: Argument has quantity 'temperature', but parameter 'value' requires 'length^-1 mass^1 time^-2'
+error QNT003: Argument has quantity 'temperature', but parameter 'value' requires 'length^-1 mass^1 time^-2'
 ```
 
 For `ref`, the value passes both ways and both directions are checked. The message names the argument's quantity and
@@ -288,7 +288,7 @@ internal static Pascal Pick(Pascal pressure, Kelvin temperature)
 ```
 
 ```text
-error METRON003: Argument has quantity 'temperature', but parameter 'val2' requires 'length^-1 mass^1 time^-2'
+error QNT003: Argument has quantity 'temperature', but parameter 'val2' requires 'length^-1 mass^1 time^-2'
 ```
 
 `Math.Max(pressure, 0f)` is fine.
@@ -299,7 +299,7 @@ Generated conversions carry the quantity on their parameter and result, so a con
 quantity either. With `convert | temperature | Celsius | ...` in the catalog:
 
 ```csharp
-using Metron.Generated;
+using Quantitas.Generated;
 
 internal static float Show(Pascal pressure)
 {
@@ -308,12 +308,12 @@ internal static float Show(Pascal pressure)
 ```
 
 ```text
-error METRON003: Argument has quantity 'length^-1 mass^1 time^-2', but parameter 'value' requires 'temperature'
+error QNT003: Argument has quantity 'length^-1 mass^1 time^-2', but parameter 'value' requires 'temperature'
 ```
 
 ---
 
-## METRON004
+## QNT004
 
 **Incompatible return quantity.** `Returned expression has quantity '{0}', but the method returns '{1}'`
 
@@ -330,7 +330,7 @@ internal static Kelvin Convert(Pascal pressure)
 ```
 
 ```text
-error METRON004: Returned expression has quantity 'length^-1 mass^1 time^-2', but the method returns 'temperature'
+error QNT004: Returned expression has quantity 'length^-1 mass^1 time^-2', but the method returns 'temperature'
 ```
 
 ### A formula that doesn't balance
@@ -351,7 +351,7 @@ internal static Newton Force(Kilogram mass, Metre distance, Second time)
 ```
 
 ```text
-error METRON004: Returned expression has quantity 'length^1 mass^1 time^-1', but the method returns 'length^1 mass^1 time^-2'
+error QNT004: Returned expression has quantity 'length^1 mass^1 time^-1', but the method returns 'length^1 mass^1 time^-2'
 ```
 
 The correct version divides by $t^2$:
@@ -369,7 +369,7 @@ internal static Metre Wrong(Metre d) => d * d;
 ```
 
 ```text
-error METRON004: Returned expression has quantity 'length^2', but the method returns 'length'
+error QNT004: Returned expression has quantity 'length^2', but the method returns 'length'
 ```
 
 ### Unannotated return type
@@ -382,7 +382,7 @@ internal static float Raw(Pascal pressure) => pressure;
 ```
 
 ```text
-error METRON004: Returned expression has quantity 'length^-1 mass^1 time^-2', but the method returns 'unannotated scalar'
+error QNT004: Returned expression has quantity 'length^-1 mass^1 time^-2', but the method returns 'unannotated scalar'
 ```
 
 The reverse is allowed: a method declared to return `Kelvin` may return a raw `float`.
@@ -397,16 +397,16 @@ internal static Pascal Invalid() => UnitConversions.FromCelsius(20f);
 ```
 
 ```text
-error METRON004: Returned expression has quantity 'temperature', but the method returns 'length^-1 mass^1 time^-2'
+error QNT004: Returned expression has quantity 'temperature', but the method returns 'length^-1 mass^1 time^-2'
 ```
 
 ---
 
-## METRON000
+## QNT000
 
 **Invalid units catalog.** `Invalid units catalog: {0}`
 
-Reported on the offending line of a `.metron` file when a quantity or conversion can't be parsed. The invalid line is
+Reported on the offending line of a `.quantitas` file when a quantity or conversion can't be parsed. The invalid line is
 skipped and the others still load. Messages and causes are in [catalog.md](catalog.md#catalog-errors); a few common
 ones:
 
@@ -415,7 +415,7 @@ pressure | Pascal | global::System.Single
 ```
 
 ```text
-Units.metron(3,1): error METRON000: Invalid units catalog: Expected 'id | alias | storage type | dimensions'.
+Units.quantitas(3,1): error QNT000: Invalid units catalog: Expected 'id | alias | storage type | dimensions'.
 ```
 
 ```text
@@ -423,7 +423,7 @@ pressure | Pascal | global::System.Single | mass=1,length=-1.5
 ```
 
 ```text
-Units.metron(4,1): error METRON000: Invalid units catalog: Invalid dimension entry 'length=-1.5'.
+Units.quantitas(4,1): error QNT000: Invalid units catalog: Invalid dimension entry 'length=-1.5'.
 ```
 
 ```text
@@ -431,10 +431,10 @@ convert | temperature | Celsius | global::System.Single | 0 | 273.15
 ```
 
 ```text
-Units.metron(5,1): error METRON000: Invalid units catalog: Conversion scale must be a finite, nonzero number.
+Units.quantitas(5,1): error QNT000: Invalid units catalog: Conversion scale must be a finite, nonzero number.
 ```
 
-Exponents are whole numbers. Metron doesn't represent fractional exponents.
+Exponents are whole numbers. Quantitas doesn't represent fractional exponents.
 
 After a catalog error, expect follow-on errors where the skipped alias is used: the type name is no longer defined, and
 the C# compiler will say so.
@@ -443,25 +443,25 @@ the C# compiler will say so.
 
 ## Severity and suppression
 
-These are ordinary Roslyn diagnostics, so the usual controls apply. Metron adds none of its own.
+These are ordinary Roslyn diagnostics, so the usual controls apply. Quantitas adds none of its own.
 
 To change a rule's severity for a project or folder, use `.editorconfig`. This is useful while migrating existing code:
 
 ```ini
 [*.cs]
-dotnet_diagnostic.METRON003.severity = warning
-dotnet_diagnostic.METRON001.severity = none
+dotnet_diagnostic.QNT003.severity = warning
+dotnet_diagnostic.QNT001.severity = none
 ```
 
-With that, `METRON003` is reported as a warning and `METRON001` is not reported at all. If your build uses
-`-warnaserror`, as Metron's own CI does, a downgraded rule fails the build again.
+With that, `QNT003` is reported as a warning and `QNT001` is not reported at all. If your build uses
+`-warnaserror`, as Quantitas's own CI does, a downgraded rule fails the build again.
 
 A single expression can be suppressed with a pragma:
 
 ```csharp
-#pragma warning disable METRON001
+#pragma warning disable QNT001
 return pressure + temperature;
-#pragma warning restore METRON001
+#pragma warning restore QNT001
 ```
 
 A suppression is a hole in the analysis. If the same rule needs
@@ -473,6 +473,6 @@ In a build, a diagnostic is printed with the usual compiler layout. The location
 the whole statement:
 
 ```text
-Physics.cs(7,16): error METRON001: Operator '+' cannot combine 'length^-1 mass^1 time^-2' and 'temperature'
-Physics.cs(19,30): error METRON002: Cannot assign 'length^-1 mass^1 time^-2' to 'temperature'
+Physics.cs(7,16): error QNT001: Operator '+' cannot combine 'length^-1 mass^1 time^-2' and 'temperature'
+Physics.cs(19,30): error QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'temperature'
 ```

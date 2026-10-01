@@ -1,6 +1,6 @@
-# Metron
+# Quantitas
 
-Metron is a .NET library for representing physical quantities, dimensions, and units, with dimensional consistency
+Quantitas is a .NET library for representing physical quantities, dimensions, and units, with dimensional consistency
 checked at compile time. Quantities are described in a catalog file, a source generator turns each one into a
 `global using` alias (`Kelvin`, `Pascal`, and so on), and an analyzer fails the build when an expression mixes
 dimensions that don't fit, like adding a pressure to a temperature.
@@ -8,31 +8,31 @@ dimensions that don't fit, like adding a pressure to a temperature.
 The aliases are erased. `Kelvin` is still a `float` in the compiled assembly, so there is no wrapper type, no runtime
 cost, and nothing that gets in the way of Native AOT or trimming.
 
-Metron originated as the dimensional-analysis system used by the [Numos](https://github.com/ArtisticRoomba/Numos)
+Quantitas originated as the dimensional-analysis system used by the [Numos](https://github.com/ArtisticRoomba/Numos)
 atmospherics simulation library and was later separated into a general-purpose library.
 
 ## Install
 
 ```bash
-dotnet add package Metron --prerelease
-dotnet add package Metron.Analyzers --prerelease
+dotnet add package Quantitas --prerelease
+dotnet add package Quantitas.Analyzers --prerelease
 ```
 
-`Metron` holds the `[Quantity]` and `[ElementQuantity]` attributes. `Metron.Analyzers` is a development
+`Quantitas` holds the `[Quantity]` and `[ElementQuantity]` attributes. `Quantitas.Analyzers` is a development
 dependency, so reference it with `PrivateAssets="all"` and it won't flow to your consumers:
 
 ```xml
-<PackageReference Include="Metron" Version="0.2.0-alpha.1"/>
-<PackageReference Include="Metron.Analyzers" Version="0.2.0-alpha.1" PrivateAssets="all"/>
+<PackageReference Include="Quantitas" Version="0.2.0-alpha.1"/>
+<PackageReference Include="Quantitas.Analyzers" Version="0.2.0-alpha.1" PrivateAssets="all"/>
 ```
 
 ## Add a catalog
 
-Put your quantities in a `*.metron` file and include it as an `AdditionalFiles` item:
+Put your quantities in a `*.quantitas` file and include it as an `AdditionalFiles` item:
 
 ```xml
 <ItemGroup>
-    <AdditionalFiles Include="MyProject.metron"/>
+    <AdditionalFiles Include="MyProject.quantitas"/>
 </ItemGroup>
 ```
 
@@ -45,28 +45,28 @@ With that catalog, this fails to build:
 
 ```csharp
 static float Total(Pascal pressure, Kelvin temperature) => pressure + temperature;
-// error METRON001: Operator '+' cannot combine 'length^-1 mass^1 time^-2' and 'temperature'
+// error QNT001: Operator '+' cannot combine 'length^-1 mass^1 time^-2' and 'temperature'
 ```
 
 The docs, in reading order:
 
 - [Dimensional analysis](docs/dimensional_analysis.md): the model and what it costs at runtime.
-- [The catalog](docs/catalog.md): the `.metron` format, unit conversions, and catalog errors.
+- [The catalog](docs/catalog.md): the `.quantitas` format, unit conversions, and catalog errors.
 - [How the analyzer reasons](docs/inference.md): where quantities come from, what each position accepts, and what isn't
   checked.
-- [Diagnostics](docs/diagnostics.md): `METRON000` to `METRON004`, with failing examples and fixes.
+- [Diagnostics](docs/diagnostics.md): `QNT000` to `QNT004`, with failing examples and fixes.
 - [Versioning and releasing](docs/versioning.md).
 
 ## Build, test, pack
 
 ```bash
-dotnet build Metron.slnx -c Release -warnaserror
-dotnet test Metron.slnx -c Release
-dotnet pack Metron.slnx -c Release
+dotnet build Quantitas.slnx -c Release -warnaserror
+dotnet test Quantitas.slnx -c Release
+dotnet pack Quantitas.slnx -c Release
 ```
 
 Packages land in `artifacts/packages`. Versions for both packages come from `Version.props`.
 
 ## License
 
-Metron is licensed under the MIT license. See LICENSE.TXT for more info.
+Quantitas is licensed under the MIT license. See LICENSE.TXT for more info.

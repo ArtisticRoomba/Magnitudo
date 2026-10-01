@@ -47,10 +47,10 @@ jobs:
         run: python3 -m unittest discover -s eng/tests -v
 
       - name: Build
-        run: dotnet build Metron.slnx -c Release -warnaserror
+        run: dotnet build Quantitas.slnx -c Release -warnaserror
 
       - name: Run tests
-        run: dotnet test Metron.slnx -c Release --no-build --no-restore
+        run: dotnet test Quantitas.slnx -c Release --no-build --no-restore
 
   package:
     name: Pack
@@ -70,10 +70,10 @@ jobs:
           dotnet-version: 10.0.x
 
       - name: Build
-        run: dotnet build Metron.slnx -c Release -warnaserror
+        run: dotnet build Quantitas.slnx -c Release -warnaserror
 
       - name: Pack
-        run: dotnet pack Metron.slnx -c Release --no-build
+        run: dotnet pack Quantitas.slnx -c Release --no-build
 
       - name: Upload packages
         uses: actions/upload-artifact@v7
