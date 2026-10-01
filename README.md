@@ -41,8 +41,21 @@ temperature | Kelvin | global::System.Single | temperature=1
 pressure    | Pascal | global::System.Single | mass=1,length=-1,time=-2
 ```
 
-The catalog format, source annotations, and diagnostics (`METRON000` to `METRON004`) are described in
-[docs/dimensional_analysis.md](docs/dimensional_analysis.md).
+With that catalog, this fails to build:
+
+```csharp
+static float Total(Pascal pressure, Kelvin temperature) => pressure + temperature;
+// error METRON001: Operator '+' cannot combine 'length^-1 mass^1 time^-2' and 'temperature'
+```
+
+The docs, in reading order:
+
+- [Dimensional analysis](docs/dimensional_analysis.md): the model and what it costs at runtime.
+- [The catalog](docs/catalog.md): the `.metron` format, unit conversions, and catalog errors.
+- [How the analyzer reasons](docs/inference.md): where quantities come from, what each position accepts, and what isn't
+  checked.
+- [Diagnostics](docs/diagnostics.md): `METRON000` to `METRON004`, with failing examples and fixes.
+- [Versioning and releasing](docs/versioning.md).
 
 ## Build, test, pack
 
