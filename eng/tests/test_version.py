@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "version.py"
-SPEC = importlib.util.spec_from_file_location("quantitas_version", SCRIPT)
+SPEC = importlib.util.spec_from_file_location("magnitudo_version", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 version_tool = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = version_tool
@@ -102,7 +102,7 @@ class GitReleaseTests(unittest.TestCase):
         root = Path(directory)
         (root / version_tool.VERSION_FILE).write_text(self.VERSION_FILE, encoding="utf-8")
         subprocess.run(["git", "init", "--initial-branch=master"], cwd=root, check=True, capture_output=True)
-        subprocess.run(["git", "config", "user.name", "Quantitas Tests"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.name", "Magnitudo Tests"], cwd=root, check=True)
         subprocess.run(["git", "config", "user.email", "tests@example.invalid"], cwd=root, check=True)
         subprocess.run(["git", "add", "."], cwd=root, check=True)
         subprocess.run(["git", "commit", "--message", "Initial versions"], cwd=root, check=True, capture_output=True)

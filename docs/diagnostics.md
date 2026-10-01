@@ -1,10 +1,10 @@
 # Diagnostics
 
-Quantitas reports five diagnostics. All are errors, in the category `DimensionalAnalysis`, and all are on by default.
+Magnitudo reports five diagnostics. All are errors, in the category `DimensionalAnalysis`, and all are on by default.
 
 | Id | Title | Reported when |
 | --- | --- | --- |
-| [`QNT000`](#qnt000) | Invalid units catalog | A `.quantitas` file can't be parsed or defines an invalid quantity or conversion. |
+| [`QNT000`](#qnt000) | Invalid units catalog | A `.magnitudo` file can't be parsed or defines an invalid quantity or conversion. |
 | [`QNT001`](#qnt001) | Incompatible quantities | `+`, `-` or a comparison combines two operands with different dimensions. |
 | [`QNT002`](#qnt002) | Incompatible quantity assignment | A value is assigned to a target with a different quantity. |
 | [`QNT003`](#qnt003) | Incompatible argument quantity | An argument's quantity doesn't match the parameter's. |
@@ -299,7 +299,7 @@ Generated conversions carry the quantity on their parameter and result, so a con
 quantity either. With `convert | temperature | Celsius | ...` in the catalog:
 
 ```csharp
-using Quantitas.Generated;
+using Magnitudo.Generated;
 
 internal static float Show(Pascal pressure)
 {
@@ -406,7 +406,7 @@ error QNT004: Returned expression has quantity 'temperature', but the method ret
 
 **Invalid units catalog.** `Invalid units catalog: {0}`
 
-Reported on the offending line of a `.quantitas` file when a quantity or conversion can't be parsed. The invalid line is
+Reported on the offending line of a `.magnitudo` file when a quantity or conversion can't be parsed. The invalid line is
 skipped and the others still load. Messages and causes are in [catalog.md](catalog.md#catalog-errors); a few common
 ones:
 
@@ -415,7 +415,7 @@ pressure | Pascal | global::System.Single
 ```
 
 ```text
-Units.quantitas(3,1): error QNT000: Invalid units catalog: Expected 'id | alias | storage type | dimensions'.
+Units.magnitudo(3,1): error QNT000: Invalid units catalog: Expected 'id | alias | storage type | dimensions'.
 ```
 
 ```text
@@ -423,7 +423,7 @@ pressure | Pascal | global::System.Single | mass=1,length=-1.5
 ```
 
 ```text
-Units.quantitas(4,1): error QNT000: Invalid units catalog: Invalid dimension entry 'length=-1.5'.
+Units.magnitudo(4,1): error QNT000: Invalid units catalog: Invalid dimension entry 'length=-1.5'.
 ```
 
 ```text
@@ -431,10 +431,10 @@ convert | temperature | Celsius | global::System.Single | 0 | 273.15
 ```
 
 ```text
-Units.quantitas(5,1): error QNT000: Invalid units catalog: Conversion scale must be a finite, nonzero number.
+Units.magnitudo(5,1): error QNT000: Invalid units catalog: Conversion scale must be a finite, nonzero number.
 ```
 
-Exponents are whole numbers. Quantitas doesn't represent fractional exponents.
+Exponents are whole numbers. Magnitudo doesn't represent fractional exponents.
 
 After a catalog error, expect follow-on errors where the skipped alias is used: the type name is no longer defined, and
 the C# compiler will say so.
@@ -443,7 +443,7 @@ the C# compiler will say so.
 
 ## Severity and suppression
 
-These are ordinary Roslyn diagnostics, so the usual controls apply. Quantitas adds none of its own.
+These are ordinary Roslyn diagnostics, so the usual controls apply. Magnitudo adds none of its own.
 
 To change a rule's severity for a project or folder, use `.editorconfig`. This is useful while migrating existing code:
 
@@ -454,7 +454,7 @@ dotnet_diagnostic.QNT001.severity = none
 ```
 
 With that, `QNT003` is reported as a warning and `QNT001` is not reported at all. If your build uses
-`-warnaserror`, as Quantitas's own CI does, a downgraded rule fails the build again.
+`-warnaserror`, as Magnitudo's own CI does, a downgraded rule fails the build again.
 
 A single expression can be suppressed with a pragma:
 

@@ -1,6 +1,6 @@
-# Versioning and releasing Quantitas
+# Versioning and releasing Magnitudo
 
-Quantitas uses Semantic Versioning 2.0.0. `Quantitas` and `Quantitas.Analyzers` always ship with the same version, stored in
+Magnitudo uses Semantic Versioning 2.0.0. `Magnitudo` and `Magnitudo.Analyzers` always ship with the same version, stored in
 `Version.props`. Don't edit it by hand; `eng/version.py` keeps `Version`, `AssemblyVersion` and `FileVersion` in sync.
 
 ```shell
@@ -37,11 +37,11 @@ Publishing uses GitHub OIDC, so there is no API key secret. One-time setup:
 
 1. On nuget.org, open **Trusted Publishing** under your account menu and add a policy with
    - Repository owner: `ArtisticRoomba`
-   - Repository: `Quantitas`
+   - Repository: `Magnitudo`
    - Workflow file: `publish.yml`
    - Environment: `nuget-release`
 2. In the GitHub repo, create an environment named `nuget-release` (add required reviewers if you want a manual gate).
 3. Add a repository variable `NUGET_USER` set to your nuget.org profile name (not your email).
 
 A brand-new package ID has to be created under an account before a policy can cover it. Either do the first push with
-a one-off API key scoped to `Quantitas*`, or create the policy as "pending" so it reserves the IDs.
+a one-off API key scoped to `Magnitudo*`, or create the policy as "pending" so it reserves the IDs.

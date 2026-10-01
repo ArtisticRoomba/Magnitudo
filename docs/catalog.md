@@ -1,12 +1,12 @@
 # The catalog
 
-A catalog is a text file with the `.quantitas` extension. It declares the quantities your project uses and, optionally,
-the external units you convert from and to. Quantitas reads every `.quantitas` file passed to the compiler as an
+A catalog is a text file with the `.magnitudo` extension. It declares the quantities your project uses and, optionally,
+the external units you convert from and to. Magnitudo reads every `.magnitudo` file passed to the compiler as an
 `AdditionalFiles` item, merges them into one catalog, and generates one `global using` alias per quantity.
 
 ```xml
 <ItemGroup>
-    <AdditionalFiles Include="MyProject.quantitas"/>
+    <AdditionalFiles Include="MyProject.magnitudo"/>
 </ItemGroup>
 ```
 
@@ -43,7 +43,7 @@ stableId | Alias | global::System.Single | baseDimension=exponent,...
 | --- | --- |
 | `stableId` | An identifier. The name `[Quantity("...")]` uses to refer to this line. |
 | `Alias` | An identifier. Becomes the alias you write in code. Unique across the catalog. |
-| storage type | Any type name. Emitted verbatim on the right side of the alias. Not checked by Quantitas. |
+| storage type | Any type name. Emitted verbatim on the right side of the alias. Not checked by Magnitudo. |
 | dimensions | Comma-separated `name=exponent` pairs. Exponents are integers. `1` or an empty field means dimensionless. |
 
 An identifier starts with a letter or `_` and continues with letters, digits or `_`. A zero exponent is dropped, so
@@ -75,7 +75,7 @@ Lines starting with `#` and blank lines are ignored.
 
 ### What gets generated
 
-For each quantity, one line in `Quantitas.QuantityAliases.g.cs`:
+For each quantity, one line in `Magnitudo.QuantityAliases.g.cs`:
 
 ```csharp
 global using Kelvin = global::System.Single;
@@ -85,7 +85,7 @@ global using Metre = global::System.Single;
 
 An alias is a compile-time name. `Kelvin` is `System.Single` in the compiled assembly, so `Kelvin[]` is a `float[]`,
 arithmetic is ordinary float arithmetic, and nothing is boxed or wrapped. The same holds for Native AOT and trimming:
-there is no Quantitas type left at runtime.
+there is no Magnitudo type left at runtime.
 
 The converse is that the C# compiler doesn't distinguish `Kelvin` from `Pascal`. Only the analyzer does.
 
@@ -122,7 +122,7 @@ $$
 c = x \cdot s + b
 $$
 
-where $s$ is `scale` and $b$ is `offset`. Quantitas emits both directions:
+where $s$ is `scale` and $b$ is `offset`. Magnitudo emits both directions:
 
 | Method | Computes |
 | --- | --- |
@@ -140,15 +140,15 @@ convert | temperature | Fahrenheit | global::System.Single | 0.5555556 | 255.372
 the generator adds:
 
 ```csharp
-namespace Quantitas.Generated
+namespace Magnitudo.Generated
 {
     public static class UnitConversions
     {
-        [return: global::Quantitas.QuantityAttribute("temperature")]
+        [return: global::Magnitudo.QuantityAttribute("temperature")]
         public static global::System.Single FromCelsius(global::System.Single value) => value * 1.0f + 273.15f;
 
         public static global::System.Single ToCelsius(
-            [global::Quantitas.QuantityAttribute("temperature")] global::System.Single value) => (value - 273.15f) / 1.0f;
+            [global::Magnitudo.QuantityAttribute("temperature")] global::System.Single value) => (value - 273.15f) / 1.0f;
 
         // FromFahrenheit and ToFahrenheit follow the same shape.
     }
@@ -159,7 +159,7 @@ Number literals take an `f` suffix when the storage type ends in `Single` and a 
 
 The `[Quantity]` attributes on the generated methods are what let the analyzer follow a value across the boundary.
 `FromCelsius(20f)` is a `temperature`; passing a `Pascal` to `ToCelsius` is a [QNT003](diagnostics.md#qnt003).
-`Quantitas.Generated.UnitConversions` is public, so it needs the `Quantitas` package referenced for the attribute type.
+`Magnitudo.Generated.UnitConversions` is public, so it needs the `Magnitudo` package referenced for the attribute type.
 
 Conversions are meant for the edge of a program: reading a sensor, parsing user input, printing a result. Inside, work
 in canonical units. Because the formula is affine, `FromCelsius(a) - FromCelsius(b)` is a difference in kelvin, which

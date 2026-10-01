@@ -4,10 +4,10 @@
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <RootNamespace>Quantitas</RootNamespace>
-        <PackageId>Quantitas</PackageId>
-        <Title>Quantitas</Title>
-        <Description>Compile-time quantity annotations for Quantitas dimensional analysis.</Description>
+        <RootNamespace>Magnitudo</RootNamespace>
+        <PackageId>Magnitudo</PackageId>
+        <Title>Magnitudo</Title>
+        <Description>Compile-time quantity annotations for Magnitudo dimensional analysis.</Description>
         <PackageTags>units;dimensional-analysis;nativeaot</PackageTags>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
     </PropertyGroup>

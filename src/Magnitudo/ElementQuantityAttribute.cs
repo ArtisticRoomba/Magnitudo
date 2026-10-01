@@ -1,4 +1,4 @@
-namespace Quantitas;
+namespace Magnitudo;
 
 /// <summary>
 ///     Associates values stored in an array or indexable container with a quantity from the consuming project's
@@ -18,6 +18,6 @@ public sealed class ElementQuantityAttribute : Attribute
         Id = id;
     }
 
-    /// <summary>The stable identifier used in a <c>*.quantitas</c> catalog.</summary>
+    /// <summary>The stable identifier used in a <c>*.magnitudo</c> catalog.</summary>
     public string Id { get; }
 }

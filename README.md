@@ -1,6 +1,6 @@
-# Quantitas
+# Magnitudo
 
-Quantitas is a .NET library for representing physical quantities, dimensions, and units, with dimensional consistency
+Magnitudo is a .NET library for representing physical quantities, dimensions, and units, with dimensional consistency
 checked at compile time. Quantities are described in a catalog file, a source generator turns each one into a
 `global using` alias (`Kelvin`, `Pascal`, and so on), and an analyzer fails the build when an expression mixes
 dimensions that don't fit, like adding a pressure to a temperature.
@@ -8,31 +8,31 @@ dimensions that don't fit, like adding a pressure to a temperature.
 The aliases are erased. `Kelvin` is still a `float` in the compiled assembly, so there is no wrapper type, no runtime
 cost, and nothing that gets in the way of Native AOT or trimming.
 
-Quantitas originated as the dimensional-analysis system used by the [Numos](https://github.com/ArtisticRoomba/Numos)
+Magnitudo originated as the dimensional-analysis system used by the [Numos](https://github.com/ArtisticRoomba/Numos)
 atmospherics simulation library and was later separated into a general-purpose library.
 
 ## Install
 
 ```bash
-dotnet add package Quantitas --prerelease
-dotnet add package Quantitas.Analyzers --prerelease
+dotnet add package Magnitudo --prerelease
+dotnet add package Magnitudo.Analyzers --prerelease
 ```
 
-`Quantitas` holds the `[Quantity]` and `[ElementQuantity]` attributes. `Quantitas.Analyzers` is a development
+`Magnitudo` holds the `[Quantity]` and `[ElementQuantity]` attributes. `Magnitudo.Analyzers` is a development
 dependency, so reference it with `PrivateAssets="all"` and it won't flow to your consumers:
 
 ```xml
-<PackageReference Include="Quantitas" Version="0.2.0-alpha.1"/>
-<PackageReference Include="Quantitas.Analyzers" Version="0.2.0-alpha.1" PrivateAssets="all"/>
+<PackageReference Include="Magnitudo" Version="0.2.0-alpha.1"/>
+<PackageReference Include="Magnitudo.Analyzers" Version="0.2.0-alpha.1" PrivateAssets="all"/>
 ```
 
 ## Add a catalog
 
-Put your quantities in a `*.quantitas` file and include it as an `AdditionalFiles` item:
+Put your quantities in a `*.magnitudo` file and include it as an `AdditionalFiles` item:
 
 ```xml
 <ItemGroup>
-    <AdditionalFiles Include="MyProject.quantitas"/>
+    <AdditionalFiles Include="MyProject.magnitudo"/>
 </ItemGroup>
 ```
 
@@ -51,7 +51,7 @@ static float Total(Pascal pressure, Kelvin temperature) => pressure + temperatur
 The docs, in reading order:
 
 - [Dimensional analysis](docs/dimensional_analysis.md): the model and what it costs at runtime.
-- [The catalog](docs/catalog.md): the `.quantitas` format, unit conversions, and catalog errors.
+- [The catalog](docs/catalog.md): the `.magnitudo` format, unit conversions, and catalog errors.
 - [How the analyzer reasons](docs/inference.md): where quantities come from, what each position accepts, and what isn't
   checked.
 - [Diagnostics](docs/diagnostics.md): `QNT000` to `QNT004`, with failing examples and fixes.
@@ -60,13 +60,13 @@ The docs, in reading order:
 ## Build, test, pack
 
 ```bash
-dotnet build Quantitas.slnx -c Release -warnaserror
-dotnet test Quantitas.slnx -c Release
-dotnet pack Quantitas.slnx -c Release
+dotnet build Magnitudo.slnx -c Release -warnaserror
+dotnet test Magnitudo.slnx -c Release
+dotnet pack Magnitudo.slnx -c Release
 ```
 
 Packages land in `artifacts/packages`. Versions for both packages come from `Version.props`.
 
 ## License
 
-Quantitas is licensed under the MIT license. See LICENSE.TXT for more info.
+Magnitudo is licensed under the MIT license. See LICENSE.TXT for more info.

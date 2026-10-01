@@ -1,0 +1,8 @@
+<Solution>
+    <Folder Name="/Tests/">
+        <Project Path="tests\Magnitudo.Analyzers.Tests\Magnitudo.Analyzers.Tests.csproj"/>
+    </Folder>
+
+    <Project Path="src\Magnitudo\Magnitudo.csproj"/>
+    <Project Path="src\Magnitudo.Analyzers\Magnitudo.Analyzers.csproj"/>
+</Solution>

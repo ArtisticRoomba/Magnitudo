@@ -8,7 +8,7 @@
         <IsTestProject>true</IsTestProject>
         <IsAotCompatible>false</IsAotCompatible>
         <IsTrimmable>false</IsTrimmable>
-        <RootNamespace>Quantitas.Analyzers.Tests</RootNamespace>
+        <RootNamespace>Magnitudo.Analyzers.Tests</RootNamespace>
     </PropertyGroup>
 
     <ItemGroup>
@@ -22,8 +22,8 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\..\src\Quantitas\Quantitas.csproj"/>
-        <ProjectReference Include="..\..\src\Quantitas.Analyzers\Quantitas.Analyzers.csproj"/>
+        <ProjectReference Include="..\..\src\Magnitudo\Magnitudo.csproj"/>
+        <ProjectReference Include="..\..\src\Magnitudo.Analyzers\Magnitudo.Analyzers.csproj"/>
     </ItemGroup>
 
     <ItemGroup>

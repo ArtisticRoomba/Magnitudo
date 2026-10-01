@@ -4,7 +4,7 @@ using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
 
-namespace Quantitas.Analyzers.Tests;
+namespace Magnitudo.Analyzers.Tests;
 
 [TestFixture]
 public sealed class DimensionalAnalysisAnalyzerTests
@@ -108,7 +108,7 @@ public sealed class DimensionalAnalysisAnalyzerTests
     public async Task GeneratedConversionCarriesItsCanonicalQuantity()
     {
         const string source = """
-                              using Quantitas.Generated;
+                              using Magnitudo.Generated;
 
                               internal static class Inputs
                               {
@@ -155,7 +155,7 @@ public sealed class DimensionalAnalysisAnalyzerTests
 
     private static async Task<ImmutableArray<Diagnostic>> Analyze(string source, string catalog)
     {
-        var additionalText = new InMemoryAdditionalText("Test.quantitas", catalog);
+        var additionalText = new InMemoryAdditionalText("Test.magnitudo", catalog);
         var compilation = GenerateAliases(
             CreateCompilation(source),
             catalog,
@@ -175,7 +175,7 @@ public sealed class DimensionalAnalysisAnalyzerTests
         CSharpCompilation compilation, string catalog,
         out ImmutableArray<Diagnostic> diagnostics)
     {
-        var additionalText = new InMemoryAdditionalText("Test.quantitas", catalog);
+        var additionalText = new InMemoryAdditionalText("Test.magnitudo", catalog);
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             [new QuantityAliasGenerator().AsSourceGenerator()],
             [additionalText],

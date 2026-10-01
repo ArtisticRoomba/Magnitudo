@@ -3,9 +3,9 @@ using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
-namespace Quantitas.Analyzers;
+namespace Magnitudo.Analyzers;
 
-/// <summary>Generates zero-cost global aliases from <c>*.quantitas</c> additional files.</summary>
+/// <summary>Generates zero-cost global aliases from <c>*.magnitudo</c> additional files.</summary>
 [Generator(LanguageNames.CSharp)]
 public sealed class QuantityAliasGenerator : IIncrementalGenerator
 {
@@ -13,7 +13,7 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         IncrementalValuesProvider<AdditionalText> catalogs = context.AdditionalTextsProvider
-            .Where(file => file.Path.EndsWith(".quantitas", StringComparison.OrdinalIgnoreCase));
+            .Where(file => file.Path.EndsWith(".magnitudo", StringComparison.OrdinalIgnoreCase));
 
         context.RegisterSourceOutput(
             catalogs.Collect(),
@@ -37,7 +37,7 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
                 if (catalog.Conversions.Length > 0)
                 {
                     source.AppendLine()
-                        .AppendLine("namespace Quantitas.Generated")
+                        .AppendLine("namespace Magnitudo.Generated")
                         .AppendLine("{")
                         .AppendLine("    /// <summary>Catalog-generated conversions to and from canonical solver units.</summary>")
                         .AppendLine("    public static class UnitConversions")
@@ -47,7 +47,7 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
                     {
                         string scale = GetLiteral(conversion.Scale, conversion.StorageType);
                         string offset = GetLiteral(conversion.Offset, conversion.StorageType);
-                        source.Append("        [return: global::Quantitas.QuantityAttribute(\"")
+                        source.Append("        [return: global::Magnitudo.QuantityAttribute(\"")
                             .Append(conversion.QuantityId).AppendLine("\")]")
                             .Append("        public static ").Append(conversion.StorageType)
                             .Append(" From").Append(conversion.UnitName).Append('(')
@@ -56,7 +56,7 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
                             .AppendLine()
                             .Append("        public static ").Append(conversion.StorageType)
                             .Append(" To").Append(conversion.UnitName)
-                            .Append("([global::Quantitas.QuantityAttribute(\"")
+                            .Append("([global::Magnitudo.QuantityAttribute(\"")
                             .Append(conversion.QuantityId).Append("\")] ")
                             .Append(conversion.StorageType).Append(" value) => (value - ")
                             .Append(offset).Append(") / ").Append(scale).AppendLine(";")
@@ -67,7 +67,7 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
                 }
 
                 productionContext.AddSource(
-                    "Quantitas.QuantityAliases.g.cs",
+                    "Magnitudo.QuantityAliases.g.cs",
                     SourceText.From(source.ToString(), Encoding.UTF8));
             });
     }

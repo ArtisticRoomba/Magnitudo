@@ -53,20 +53,20 @@ jobs:
         run: python3 -m unittest discover -s eng/tests -v
 
       - name: Build
-        run: dotnet build Quantitas.slnx -c Release -warnaserror
+        run: dotnet build Magnitudo.slnx -c Release -warnaserror
 
       - name: Run tests
-        run: dotnet test Quantitas.slnx -c Release --no-build --no-restore
+        run: dotnet test Magnitudo.slnx -c Release --no-build --no-restore
 
       - name: Pack
-        run: dotnet pack Quantitas.slnx -c Release --no-build
+        run: dotnet pack Magnitudo.slnx -c Release --no-build
 
       - name: Check package versions
         shell: bash
         env:
           VERSION: ${{ steps.release.outputs.version }}
         run: |
-          for id in Quantitas Quantitas.Analyzers; do
+          for id in Magnitudo Magnitudo.Analyzers; do
             if [[ ! -f "artifacts/packages/$id.$VERSION.nupkg" ]]; then
               echo "Missing artifacts/packages/$id.$VERSION.nupkg." >&2
               exit 2
@@ -127,7 +127,7 @@ jobs:
         env:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
-          # Quantitas.Analyzers has no .snupkg; push on a *.nupkg glob also uploads a sibling .snupkg
+          # Magnitudo.Analyzers has no .snupkg; push on a *.nupkg glob also uploads a sibling .snupkg
           for package in artifacts/packages/*.nupkg; do
             dotnet nuget push "$package" \
               --api-key "$NUGET_API_KEY" \

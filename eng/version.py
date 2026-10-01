@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manage the Quantitas version and annotated release tags."""
+"""Manage the Magnitudo version and annotated release tags."""
 
 from __future__ import annotations
 
@@ -104,7 +104,7 @@ def repository_root(explicit_root: str | None = None) -> Path:
     root = Path(explicit_root).resolve() if explicit_root else Path(__file__).resolve().parent.parent
     if (root / VERSION_FILE).is_file():
         return root
-    raise VersionError(f"'{root}' is not a Quantitas repository containing {VERSION_FILE}")
+    raise VersionError(f"'{root}' is not a Magnitudo repository containing {VERSION_FILE}")
 
 
 def read_xml_value(text: str, name: str, path: Path) -> str:
@@ -180,13 +180,13 @@ def create_tag(root: Path) -> str:
     exists = run_git(root, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}", check=False)
     if exists.returncode == 0:
         raise VersionError(f"tag '{tag}' already exists")
-    run_git(root, "tag", "--annotate", tag, "--message", f"Quantitas {version}")
+    run_git(root, "tag", "--annotate", tag, "--message", f"Magnitudo {version}")
     return tag
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", help="Quantitas repository root (defaults to the script's parent)")
+    parser.add_argument("--repo", help="Magnitudo repository root (defaults to the script's parent)")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("get", help="print the current version")
     commands.add_parser("promote", help="drop the prerelease suffix")

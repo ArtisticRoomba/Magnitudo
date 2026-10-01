@@ -1,8 +1,0 @@
-<Solution>
-    <Folder Name="/Tests/">
-        <Project Path="tests\Quantitas.Analyzers.Tests\Quantitas.Analyzers.Tests.csproj"/>
-    </Folder>
-
-    <Project Path="src\Quantitas\Quantitas.csproj"/>
-    <Project Path="src\Quantitas.Analyzers\Quantitas.Analyzers.csproj"/>
-</Solution>

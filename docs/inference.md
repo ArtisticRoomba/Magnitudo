@@ -183,7 +183,7 @@ reasons a mistake gets through.
 ### Same dimension, different meaning
 
 Quantities are compared by exponent vector alone. Torque and energy are both $M\,L^2\,T^{-2}$, frequency and
-radioactivity are both $T^{-1}$, and Quantitas can't tell them apart:
+radioactivity are both $T^{-1}$, and Magnitudo can't tell them apart:
 
 ```text
 energy | Joule      | global::System.Single | mass=1,length=2,time=-2

@@ -1,6 +1,6 @@
 using Microsoft.CodeAnalysis;
 
-namespace Quantitas.Analyzers;
+namespace Magnitudo.Analyzers;
 
 internal static class Diagnostics
 {

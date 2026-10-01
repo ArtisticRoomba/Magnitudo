@@ -1,6 +1,6 @@
 # Dimensional analysis
 
-Quantitas checks dimensional consistency at compile time. A Roslyn analyzer tracks the physical quantity of each value
+Magnitudo checks dimensional consistency at compile time. A Roslyn analyzer tracks the physical quantity of each value
 through a solution and reports expressions that combine dimensions that don't fit, such as adding a pressure to a
 temperature.
 
@@ -30,7 +30,7 @@ This compiles because $[n][T][c] = [p]$. Change `amount * temperature` to `amoun
 
 ## No runtime cost
 
-All of this happens at compile time. Quantitas uses C# `using` aliases, so the annotated types are erased: a generated alias
+All of this happens at compile time. Magnitudo uses C# `using` aliases, so the annotated types are erased: a generated alias
 such as `Kelvin` or `Pascal` backed by `global::System.Single` is still `System.Single` in CLR metadata, arrays remain
 primitive arrays, and arithmetic remains ordinary primitive arithmetic. Operations like vectorization work as they do on
 any `float`, and Native AOT and trimming are unaffected. This is a design constraint and unlikely to change.
@@ -40,15 +40,15 @@ annotated. [How the analyzer reasons](inference.md) says exactly where its knowl
 
 ## Components
 
-- `Quantitas.Analyzers` generates aliases from a catalog and reports dimension mismatches as build errors.
-- `Quantitas` supplies the `[Quantity]` and `[ElementQuantity]` attributes, for public and cross-assembly declarations
+- `Magnitudo.Analyzers` generates aliases from a catalog and reports dimension mismatches as build errors.
+- `Magnitudo` supplies the `[Quantity]` and `[ElementQuantity]` attributes, for public and cross-assembly declarations
   whose aliases are erased from CLR signatures.
 
 ## Reading order
 
 | Page | Covers |
 | --- | --- |
-| [catalog.md](catalog.md) | The `.quantitas` file: quantity lines, unit conversions, what is generated, catalog errors. |
+| [catalog.md](catalog.md) | The `.magnitudo` file: quantity lines, unit conversions, what is generated, catalog errors. |
 | [inference.md](inference.md) | How a value's quantity is determined, what each position accepts, what isn't checked. |
 | [diagnostics.md](diagnostics.md) | `QNT000` to `QNT004`, each with failing code, the message, and the fix. |
 
