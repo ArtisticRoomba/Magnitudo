@@ -242,14 +242,14 @@ internal sealed class DimensionVector : IEquatable<DimensionVector>
         _exponents = exponents;
     }
 
-    public bool IsScalar()
-    {
-        return _exponents.All(e => e.Value == 0);
-    }
-
     public bool Equals(DimensionVector? other)
     {
         return other is not null && _exponents.SequenceEqual(other._exponents);
+    }
+
+    public bool IsScalar()
+    {
+        return _exponents.All(e => e.Value == 0);
     }
 
     internal DimensionVector Multiply(DimensionVector other)

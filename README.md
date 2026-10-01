@@ -1,4 +1,5 @@
 # Metron
+
 Metron is a .NET library for representing physical quantities, dimensions, and units, with dimensional consistency
 checked at compile time. Quantities are described in a catalog file, a source generator turns each one into a
 `global using` alias (`Kelvin`, `Pascal`, and so on), and an analyzer fails the build when an expression mixes
@@ -7,7 +8,8 @@ dimensions that don't fit, like adding a pressure to a temperature.
 The aliases are erased. `Kelvin` is still a `float` in the compiled assembly, so there is no wrapper type, no runtime
 cost, and nothing that gets in the way of Native AOT or trimming.
 
-Metron originated as the dimensional-analysis system used by the [Numos](https://github.com/ArtisticRoomba/Numos) atmospherics simulation library and was later separated into a general-purpose library.
+Metron originated as the dimensional-analysis system used by the [Numos](https://github.com/ArtisticRoomba/Numos)
+atmospherics simulation library and was later separated into a general-purpose library.
 
 ## Install
 
