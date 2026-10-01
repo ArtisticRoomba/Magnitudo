@@ -42,6 +42,10 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
+      - name: Test version tooling
+        if: matrix.os == 'ubuntu-latest'
+        run: python3 -m unittest discover -s eng/tests -v
+
       - name: Build
         run: dotnet build Metron.slnx -c Release -warnaserror
 
