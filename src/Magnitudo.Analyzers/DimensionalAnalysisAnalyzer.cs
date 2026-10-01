@@ -4,7 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Operations;
 
-namespace Numos.Units.Analyzers;
+namespace Magnitudo.Analyzers;
 
 /// <summary>Checks dimensional compatibility while leaving all runtime numeric types unchanged.</summary>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
@@ -49,8 +49,8 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
 
     private sealed class QuantityAnalysis
     {
-        private const string QuantityAttributeName = "Numos.Units.QuantityAttribute";
-        private const string ElementQuantityAttributeName = "Numos.Units.ElementQuantityAttribute";
+        private const string QuantityAttributeName = "Magnitudo.QuantityAttribute";
+        private const string ElementQuantityAttributeName = "Magnitudo.ElementQuantityAttribute";
         private readonly UnitCatalog _catalog;
 
         private readonly Compilation _compilation;
@@ -64,7 +64,7 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
         internal void AnalyzeBinary(OperationAnalysisContext context)
         {
             var operation = (IBinaryOperation)context.Operation;
-            if (!RequiresEqualOperands(operation.OperatorKind))
+            if (!RequiresEqualOperands(operation.OperatorKind) || IsStringConcatenation(operation))
                 return;
 
             var left = Infer(operation.LeftOperand);
@@ -84,6 +84,9 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
         internal void AnalyzeAssignment(OperationAnalysisContext context)
         {
             var operation = (ISimpleAssignmentOperation)context.Operation;
+            if (operation.Target is IDiscardOperation)
+                return;
+
             ReportAssignmentIfNeeded(context, operation.Target, operation.Value, operation.Syntax.GetLocation());
         }
 
@@ -157,18 +160,19 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                             Diagnostic.Create(
                                 Diagnostics.IncompatibleArgument,
                                 operation.Value.Syntax.GetLocation(),
-                                declared,
+                                target,
                                 operation.Parameter.Name,
-                                target));
+                                declared));
                     }
 
                     return;
                 }
                 case RefKind.Ref:
                 {
-                    // Value flows both ways: must be compatible in each direction.
+                    // An unannotated ref parameter accepts anything, like a plain argument, so generic
+                    // helpers such as Swap<T>(ref T, ref T) work. A declared one needs an exact match.
                     var target = Infer(operation.Value);
-                    if (IsIncompatibleAssignment(target, declared) || IsIncompatibleAssignment(declared, target))
+                    if (IsIncompatibleArgument(declared, target))
                     {
                         context.ReportDiagnostic(
                             Diagnostic.Create(
@@ -203,10 +207,24 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
         internal void AnalyzeReturn(OperationAnalysisContext context)
         {
             var operation = (IReturnOperation)context.Operation;
-            if (operation.ReturnedValue is null || context.ContainingSymbol is not IMethodSymbol method)
+            if (operation.ReturnedValue is null)
                 return;
 
-            var expected = GetMethodReturnQuantity(method);
+            // ContainingSymbol is the enclosing member, so a return inside a lambda or local function
+            // has to find its own function first.
+            var function = GetEnclosingFunction(operation, out bool isLambda) ??
+                           context.ContainingSymbol as IMethodSymbol;
+
+            if (function is null)
+                return;
+
+            var expected = GetReturnStatementQuantity(function);
+
+            // A lambda's return type usually comes from its delegate type, where the alias is already
+            // erased, so only check lambdas that declare a quantity.
+            if (isLambda && !expected.IsKnown)
+                return;
+
             var actual = Infer(operation.ReturnedValue);
             if (IsIncompatibleAssignment(expected, actual))
             {
@@ -222,7 +240,9 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
         internal void AnalyzeInvocation(OperationAnalysisContext context)
         {
             var operation = (IInvocationOperation)context.Operation;
-            if (!IsQuantityPreservingMath(operation.TargetMethod))
+
+            // CopySign(x, y) only takes the sign of y, so y may have any quantity.
+            if (!IsQuantityPreservingMath(operation.TargetMethod) || IsCopySign(operation.TargetMethod))
                 return;
 
             var expected = QuantityValue.Unknown;
@@ -288,7 +308,11 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 case IFieldReferenceOperation field:
                     return GetSymbolQuantity(field.Field);
                 case IPropertyReferenceOperation property when property.Property.IsIndexer:
-                    return GetElementQuantity(property.Instance);
+                {
+                    // An indexer that declares its own quantity wins over the container's element type.
+                    var declared = GetSymbolQuantity(property.Property);
+                    return declared.IsKnown ? declared : GetElementQuantity(property.Instance);
+                }
                 case IPropertyReferenceOperation property:
                     return GetSymbolQuantity(property.Property);
                 case IArrayElementReferenceOperation arrayElement:
@@ -299,6 +323,9 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                     if (declared.IsKnown)
                         return declared;
 
+                    if (IsCopySign(invocation.TargetMethod))
+                        return Infer(GetArgument(invocation, 0));
+
                     if (IsQuantityPreservingMath(invocation.TargetMethod))
                     {
                         return invocation.Arguments.Select(argument => Infer(argument.Value))
@@ -307,6 +334,8 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
 
                     return QuantityValue.Unknown;
                 }
+                case IAwaitOperation { Operation: IInvocationOperation awaited }:
+                    return GetAwaitedQuantity(awaited.TargetMethod);
                 case IBinaryOperation binary:
                     return InferBinary(binary);
                 case IConditionalOperation conditional:
@@ -328,6 +357,9 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
 
         private QuantityValue InferBinary(IBinaryOperation binary)
         {
+            if (IsStringConcatenation(binary))
+                return QuantityValue.Unknown;
+
             var left = Infer(binary.LeftOperand);
             var right = Infer(binary.RightOperand);
             return binary.OperatorKind switch
@@ -342,6 +374,15 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
         private QuantityValue GetElementQuantity(IOperation? operation)
         {
             operation = Unwrap(operation);
+            if (operation is IInvocationOperation invocation)
+            {
+                var returned = GetAttributeQuantity(
+                    invocation.TargetMethod.GetReturnTypeAttributes(),
+                    ElementQuantityAttributeName);
+
+                return returned.IsKnown ? returned : GetSyntaxQuantity(invocation.TargetMethod, true);
+            }
+
             ISymbol? symbol = operation switch
             {
                 IFieldReferenceOperation field => field.Field,
@@ -371,6 +412,37 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
 
             var attributed = GetAttributeQuantity(method.GetReturnTypeAttributes(), QuantityAttributeName);
             return attributed.IsKnown ? attributed : GetSyntaxQuantity(method, false);
+        }
+
+        private QuantityValue GetReturnStatementQuantity(IMethodSymbol method)
+        {
+            // `return x;` in an async method produces the T of Task<T>.
+            return method.IsAsync ? GetAwaitedQuantity(method) : GetMethodReturnQuantity(method);
+        }
+
+        private QuantityValue GetAwaitedQuantity(IMethodSymbol method)
+        {
+            var attributed = GetAttributeQuantity(method.GetReturnTypeAttributes(), QuantityAttributeName);
+            return attributed.IsKnown ? attributed : GetSyntaxQuantity(method, true);
+        }
+
+        private static IMethodSymbol? GetEnclosingFunction(IOperation operation, out bool isLambda)
+        {
+            for (var parent = operation.Parent; parent is not null; parent = parent.Parent)
+            {
+                switch (parent)
+                {
+                    case IAnonymousFunctionOperation lambda:
+                        isLambda = true;
+                        return lambda.Symbol;
+                    case ILocalFunctionOperation localFunction:
+                        isLambda = false;
+                        return localFunction.Symbol;
+                }
+            }
+
+            isLambda = false;
+            return null;
         }
 
         private QuantityValue GetAttributeQuantity(ISymbol symbol, string attributeName)
@@ -406,6 +478,10 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 if (element)
                     type = GetElementType(type);
 
+                // `Metre?` and `ref Metre` carry the same quantity as `Metre`.
+                while (type is NullableTypeSyntax or RefTypeSyntax)
+                    type = type is NullableTypeSyntax nullable ? nullable.ElementType : ((RefTypeSyntax)type).Type;
+
                 if (type is null)
                     continue;
 
@@ -430,6 +506,7 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 IndexerDeclarationSyntax indexer => indexer.Type,
                 MethodDeclarationSyntax method => method.ReturnType,
                 LocalFunctionStatementSyntax localFunction => localFunction.ReturnType,
+                ParenthesizedLambdaExpressionSyntax lambda => lambda.ReturnType,
                 OperatorDeclarationSyntax @operator => @operator.ReturnType,
                 ConversionOperatorDeclarationSyntax conversion => conversion.Type,
                 _ => null
@@ -471,6 +548,22 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 or BinaryOperatorKind.GreaterThanOrEqual;
         }
 
+        private static bool IsCopySign(IMethodSymbol method)
+        {
+            return method.Name == "CopySign" && IsQuantityPreservingMath(method);
+        }
+
+        private static IOperation? GetArgument(IInvocationOperation invocation, int ordinal)
+        {
+            return invocation.Arguments.FirstOrDefault(argument => argument.Parameter?.Ordinal == ordinal)?.Value;
+        }
+
+        private static bool IsStringConcatenation(IBinaryOperation operation)
+        {
+            return operation.OperatorKind == BinaryOperatorKind.Add &&
+                   operation.Type?.SpecialType == SpecialType.System_String;
+        }
+
         private static bool IsQuantityPreservingMath(IMethodSymbol method)
         {
             string containingType = method.ContainingType.ToDisplayString();
@@ -505,9 +598,9 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 return false;
 
             // Unknown (unannotated) target receiving a known, dimensioned value silently
-            // discards its unit information — flag it. Literals are exempt since they
-            // aren't "known" (IsKnown is false for LiteralScalar).
-            return value.IsKnown && !value.IsLiteralScalar;
+            // discards its unit information — flag it. Dimensionless values have nothing
+            // to lose, so `float aspect = width / height;` is fine.
+            return value.IsKnown && !value.Dimensions!.IsScalar();
         }
 
         private static bool IsIncompatibleArgument(QuantityValue expected, QuantityValue actual)
@@ -519,7 +612,8 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 return false;
 
             // Parameter requires a specific dimension. A literal constant (e.g. `0f`)
-            // is exempt — it carries no conflicting dimension of its own.
+            // is exempt — it carries no conflicting dimension of its own. A declared or
+            // computed dimensionless value is not a literal and is checked like any other.
             if (actual.IsLiteralScalar)
                 return false;
 
@@ -548,10 +642,7 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
         private QuantityValue(DimensionVector? dimensions, bool isLiteralScalar = false)
         {
             Dimensions = dimensions;
-            if (dimensions == null)
-                IsLiteralScalar = isLiteralScalar;
-            else
-                IsLiteralScalar = dimensions.IsScalar();
+            IsLiteralScalar = dimensions is null && isLiteralScalar;
         }
 
         internal static QuantityValue Unknown => default;

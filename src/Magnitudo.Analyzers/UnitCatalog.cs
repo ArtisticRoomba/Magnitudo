@@ -3,7 +3,7 @@ using System.Globalization;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
-namespace Numos.Units.Analyzers;
+namespace Magnitudo.Analyzers;
 
 internal sealed class UnitCatalog
 {
@@ -49,9 +49,10 @@ internal sealed class UnitCatalog
         var conversions = new List<UnitConversionDefinition>();
         var conversionNames = new HashSet<string>(StringComparer.Ordinal);
         var aliases = new HashSet<string>(StringComparer.Ordinal);
+        var ids = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var file in files.Where(file =>
-                     file.Path.EndsWith(".numosunits", StringComparison.OrdinalIgnoreCase)))
+                     file.Path.EndsWith(".magnitudo", StringComparison.OrdinalIgnoreCase)))
         {
             var text = file.GetText(cancellationToken);
             if (text is null)
@@ -65,7 +66,7 @@ internal sealed class UnitCatalog
 
                 try
                 {
-                    if (line.StartsWith("convert", StringComparison.Ordinal))
+                    if (IsConversionLine(line))
                     {
                         var conversion = ParseConversionLine(line);
                         if (!conversionNames.Add(conversion.UnitName))
@@ -76,8 +77,14 @@ internal sealed class UnitCatalog
                     else
                     {
                         var definition = ParseQuantityLine(line);
-                        if (!aliases.Add(definition.Alias))
+                        if (aliases.Contains(definition.Alias))
                             throw new FormatException($"Alias '{definition.Alias}' is declared more than once.");
+
+                        if (ids.Contains(definition.Id))
+                            throw new FormatException($"Quantity ID '{definition.Id}' is declared more than once.");
+
+                        aliases.Add(definition.Alias);
+                        ids.Add(definition.Id);
 
                         definitions.Add(definition);
                     }
@@ -138,16 +145,25 @@ internal sealed class UnitCatalog
         string dimensionText = parts[3].Trim();
         if (dimensionText.Length != 0 && dimensionText != "1")
         {
+            var names = new HashSet<string>(StringComparer.Ordinal);
             foreach (string dimensionEntry in dimensionText.Split(','))
             {
                 string[] pair = dimensionEntry.Split('=');
                 if (pair.Length != 2 ||
                     !IsIdentifier(pair[0].Trim()) ||
-                    !int.TryParse(pair[1].Trim(), out int exponent))
+                    !int.TryParse(
+                        pair[1].Trim(),
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out int exponent))
                     throw new FormatException($"Invalid dimension entry '{dimensionEntry.Trim()}'.");
 
+                string name = pair[0].Trim();
+                if (!names.Add(name))
+                    throw new FormatException($"Dimension '{name}' is listed more than once.");
+
                 if (exponent != 0)
-                    dimensions[pair[0].Trim()] = exponent;
+                    dimensions[name] = exponent;
             }
         }
 
@@ -186,6 +202,13 @@ internal sealed class UnitCatalog
             throw new FormatException("Conversion offset must be a finite number.");
 
         return new UnitConversionDefinition(quantityId, unitName, storageType, scale, offset);
+    }
+
+    private static bool IsConversionLine(string line)
+    {
+        int separator = line.IndexOf('|');
+        string first = separator < 0 ? line : line.Substring(0, separator);
+        return first.Trim() == "convert";
     }
 
     private static bool IsIdentifier(string value)
@@ -242,14 +265,14 @@ internal sealed class DimensionVector : IEquatable<DimensionVector>
         _exponents = exponents;
     }
 
-    public bool IsScalar()
-    {
-        return _exponents.All(e => e.Value == 0);
-    }
-
     public bool Equals(DimensionVector? other)
     {
         return other is not null && _exponents.SequenceEqual(other._exponents);
+    }
+
+    public bool IsScalar()
+    {
+        return _exponents.All(e => e.Value == 0);
     }
 
     internal DimensionVector Multiply(DimensionVector other)

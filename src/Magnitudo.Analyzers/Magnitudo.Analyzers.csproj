@@ -6,9 +6,9 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
-        <RootNamespace>Numos.Units.Analyzers</RootNamespace>
-        <PackageId>Numos.Units.Analyzers</PackageId>
-        <Title>Numos Units Analyzers</Title>
+        <RootNamespace>Magnitudo.Analyzers</RootNamespace>
+        <PackageId>Magnitudo.Analyzers</PackageId>
+        <Title>Magnitudo Analyzers</Title>
         <Description>Dimensional analysis and quantity alias generation for C#.</Description>
         <PackageTags>roslyn;analyzer;units;dimensional-analysis</PackageTags>
         <DevelopmentDependency>true</DevelopmentDependency>

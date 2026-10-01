@@ -3,9 +3,9 @@ using System.Text;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
 
-namespace Numos.Units.Analyzers;
+namespace Magnitudo.Analyzers;
 
-/// <summary>Generates zero-cost global aliases from <c>*.numosunits</c> additional files.</summary>
+/// <summary>Generates zero-cost global aliases from <c>*.magnitudo</c> additional files.</summary>
 [Generator(LanguageNames.CSharp)]
 public sealed class QuantityAliasGenerator : IIncrementalGenerator
 {
@@ -13,7 +13,7 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         IncrementalValuesProvider<AdditionalText> catalogs = context.AdditionalTextsProvider
-            .Where(file => file.Path.EndsWith(".numosunits", StringComparison.OrdinalIgnoreCase));
+            .Where(file => file.Path.EndsWith(".magnitudo", StringComparison.OrdinalIgnoreCase));
 
         context.RegisterSourceOutput(
             catalogs.Collect(),
@@ -37,7 +37,7 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
                 if (catalog.Conversions.Length > 0)
                 {
                     source.AppendLine()
-                        .AppendLine("namespace Numos.Units.Generated")
+                        .AppendLine("namespace Magnitudo.Generated")
                         .AppendLine("{")
                         .AppendLine("    /// <summary>Catalog-generated conversions to and from canonical solver units.</summary>")
                         .AppendLine("    public static class UnitConversions")
@@ -47,7 +47,7 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
                     {
                         string scale = GetLiteral(conversion.Scale, conversion.StorageType);
                         string offset = GetLiteral(conversion.Offset, conversion.StorageType);
-                        source.Append("        [return: global::Numos.Units.QuantityAttribute(\"")
+                        source.Append("        [return: global::Magnitudo.QuantityAttribute(\"")
                             .Append(conversion.QuantityId).AppendLine("\")]")
                             .Append("        public static ").Append(conversion.StorageType)
                             .Append(" From").Append(conversion.UnitName).Append('(')
@@ -56,7 +56,7 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
                             .AppendLine()
                             .Append("        public static ").Append(conversion.StorageType)
                             .Append(" To").Append(conversion.UnitName)
-                            .Append("([global::Numos.Units.QuantityAttribute(\"")
+                            .Append("([global::Magnitudo.QuantityAttribute(\"")
                             .Append(conversion.QuantityId).Append("\")] ")
                             .Append(conversion.StorageType).Append(" value) => (value - ")
                             .Append(offset).Append(") / ").Append(scale).AppendLine(";")
@@ -67,7 +67,7 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
                 }
 
                 productionContext.AddSource(
-                    "Numos.QuantityAliases.g.cs",
+                    "Magnitudo.QuantityAliases.g.cs",
                     SourceText.From(source.ToString(), Encoding.UTF8));
             });
     }
@@ -78,6 +78,13 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
         if (!text.Contains('.') && !text.Contains('E') && !text.Contains('e'))
             text += ".0";
 
-        return storageType.EndsWith("Single", StringComparison.Ordinal) ? text + "f" : text + "d";
+        return storageType switch
+        {
+            "float" => text + "f",
+            "decimal" => text + "m",
+            _ when storageType.EndsWith("Single", StringComparison.Ordinal) => text + "f",
+            _ when storageType.EndsWith("Decimal", StringComparison.Ordinal) => text + "m",
+            _ => text + "d"
+        };
     }
 }
