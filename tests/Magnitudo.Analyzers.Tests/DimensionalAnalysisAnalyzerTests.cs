@@ -1540,7 +1540,6 @@ public sealed class DimensionalAnalysisAnalyzerTests
     }
 
     [Test]
-    [Ignore("Suspected bug: docs/diagnostics.md says QNT002 covers initializers, but field initializers are not analyzed.")]
     public async Task FieldInitializerIsQnt002()
     {
         const string source = """
@@ -1556,6 +1555,117 @@ public sealed class DimensionalAnalysisAnalyzerTests
         Assert.That(
             diagnostics.Single().GetMessage(),
             Is.EqualTo("Cannot assign 'length^-1 mass^1 time^-2' to 'temperature'"));
+    }
+
+    [Test]
+    public async Task PropertyInitializerIsQnt002()
+    {
+        const string source = """
+                              internal sealed class Gas
+                              {
+                                  private static Pascal Ambient => 101325f;
+                                  internal Kelvin Target { get; } = Ambient;
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        var diagnostic = diagnostics.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnostic.Id, Is.EqualTo("QNT002"));
+            Assert.That(SpanText(diagnostic), Is.EqualTo("Ambient"));
+        });
+    }
+
+    [Test]
+    public async Task MatchingAndLiteralFieldAndPropertyInitializersHaveNoDiagnostics()
+    {
+        const string source = """
+                              internal sealed class Gas
+                              {
+                                  private static readonly Pascal Ambient = 101325f;
+                                  private static readonly Pascal Copy = Ambient;
+                                  private readonly Kelvin _temperature = 300f;
+                                  internal Pascal Pressure { get; } = Ambient;
+                                  internal Kelvin Start { get; set; } = 273.15f;
+                                  private const float Raw = 1f;
+                                  private readonly float _plain = 2f;
+                                  private readonly Kelvin _claimed = Raw;
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task MultiFieldDeclarationReportsOnlyTheBadInitializer()
+    {
+        const string source = """
+                              internal sealed class Gas
+                              {
+                                  private static readonly Kelvin X = 1f;
+                                  private static readonly Pascal Y = 2f;
+                                  private readonly Kelvin _a = X, _b = Y, _c = X;
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        var diagnostic = diagnostics.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnostic.Id, Is.EqualTo("QNT002"));
+            Assert.That(SpanText(diagnostic), Is.EqualTo("Y"));
+        });
+    }
+
+    [Test]
+    public async Task QuantityAttributedFieldInitializerIsChecked()
+    {
+        const string source = """
+                              using Magnitudo;
+
+                              internal sealed class Gas
+                              {
+                                  private static readonly Pascal Ambient = 101325f;
+                                  [Quantity("temperature")] private readonly float _target = Ambient;
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        var diagnostic = diagnostics.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnostic.Id, Is.EqualTo("QNT002"));
+            Assert.That(SpanText(diagnostic), Is.EqualTo("Ambient"));
+        });
+    }
+
+    [Test]
+    public async Task ConstAndEnumInitializersHaveNoDiagnostics()
+    {
+        const string source = """
+                              internal enum Mode
+                              {
+                                  A = 1,
+                                  B = A + 1
+                              }
+
+                              internal sealed class Gas
+                              {
+                                  private const Kelvin Zero = 0f;
+                                  private const int Count = 3;
+                                  internal event System.Action? Changed = null;
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(diagnostics, Is.Empty);
     }
 
     [Test]

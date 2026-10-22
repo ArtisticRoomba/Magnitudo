@@ -48,6 +48,11 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 OperationKind.CompoundAssignment);
 
             startContext.RegisterOperationAction(analysis.AnalyzeVariable, OperationKind.VariableDeclarator);
+            startContext.RegisterOperationAction(analysis.AnalyzeFieldInitializer, OperationKind.FieldInitializer);
+            startContext.RegisterOperationAction(
+                analysis.AnalyzePropertyInitializer,
+                OperationKind.PropertyInitializer);
+
             startContext.RegisterOperationAction(analysis.AnalyzeArgument, OperationKind.Argument);
             startContext.RegisterOperationAction(analysis.AnalyzeReturn, OperationKind.Return);
             startContext.RegisterOperationAction(analysis.AnalyzeInvocation, OperationKind.Invocation);
@@ -133,14 +138,33 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
             if (operation.Initializer is null)
                 return;
 
-            var target = GetSymbolQuantity(operation.Symbol);
-            var value = Infer(operation.Initializer.Value);
+            ReportInitializerIfNeeded(context, operation.Symbol, operation.Initializer.Value);
+        }
+
+        internal void AnalyzeFieldInitializer(OperationAnalysisContext context)
+        {
+            var operation = (IFieldInitializerOperation)context.Operation;
+            foreach (var field in operation.InitializedFields)
+                ReportInitializerIfNeeded(context, field, operation.Value);
+        }
+
+        internal void AnalyzePropertyInitializer(OperationAnalysisContext context)
+        {
+            var operation = (IPropertyInitializerOperation)context.Operation;
+            foreach (var property in operation.InitializedProperties)
+                ReportInitializerIfNeeded(context, property, operation.Value);
+        }
+
+        private void ReportInitializerIfNeeded(OperationAnalysisContext context, ISymbol symbol, IOperation initializer)
+        {
+            var target = GetSymbolQuantity(symbol);
+            var value = Infer(initializer);
             if (IsIncompatibleAssignment(target, value))
             {
                 context.ReportDiagnostic(
                     Diagnostic.Create(
                         Diagnostics.IncompatibleAssignment,
-                        operation.Initializer.Value.Syntax.GetLocation(),
+                        initializer.Syntax.GetLocation(),
                         value,
                         target));
             }
