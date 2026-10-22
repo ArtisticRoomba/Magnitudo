@@ -38,17 +38,17 @@ dotnet add package Magnitudo --prerelease
 dotnet add package Magnitudo.Analyzers --prerelease
 ```
 
-Then add a `.magnitudo` catalog as an `AdditionalFiles` item. [Getting started](docs/install.md) walks through it.
+Then add a `.magnitudo` catalog as an `AdditionalFiles` item. [Getting started](https://github.com/ArtisticRoomba/Magnitudo/blob/master/docs/install.md) walks through it.
 
 ## Recommended reading
 
-- [Getting started](docs/install.md)
-- [How Magnitudo works](docs/how-it-works.md)
-- [The catalog format](docs/catalog.md)
-- [Diagnostics](docs/diagnostics.md)
-- [Gotchas](docs/gotchas.md)
-- [What the analyzer does not check](docs/missing.md)
-- [Versioning and releasing](docs/versioning.md)
+- [Getting started](https://github.com/ArtisticRoomba/Magnitudo/blob/master/docs/install.md)
+- [How Magnitudo works](https://github.com/ArtisticRoomba/Magnitudo/blob/master/docs/how-it-works.md)
+- [The catalog format](https://github.com/ArtisticRoomba/Magnitudo/blob/master/docs/catalog.md)
+- [Diagnostics](https://github.com/ArtisticRoomba/Magnitudo/blob/master/docs/diagnostics.md)
+- [Gotchas](https://github.com/ArtisticRoomba/Magnitudo/blob/master/docs/gotchas.md)
+- [What the analyzer does not check](https://github.com/ArtisticRoomba/Magnitudo/blob/master/docs/missing.md)
+- [Versioning and releasing](https://github.com/ArtisticRoomba/Magnitudo/blob/master/docs/versioning.md)
 
 ## Bug reports and contributions
 
