@@ -8,6 +8,28 @@ Do not edit released sections by hand pretty please.
 
 ### Breaking changes
 
+*None yet*
+
+### New features
+
+*None yet*
+
+### Bugfixes
+
+*None yet*
+
+### Other
+
+*None yet*
+
+### Internal
+
+*None yet*
+
+## 0.3.0-beta.1
+
+### Breaking changes
+
 - The analyzer checks field and property initializers (QNT002). Code that built before can now fail.
 - Compound assignment into an unannotated target reports QNT002. `total += pressure` on a plain `float` is an error.
 - `UnitConversions` is internal. It was public.
