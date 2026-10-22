@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Diagnostics;
@@ -491,12 +492,22 @@ public sealed class DimensionalAnalysisAnalyzerTests
                               internal static class Inputs
                               {
                                   internal static Kelvin Read(Metre length) => UnitConversions.FromCelsius(20f);
+                                  internal static MaybeMetre Maybe = null;
+                                  internal static MaybeCount Count = null;
+                                  internal static Label Name = "";
+                                  internal static Thing Anything = new object();
+                                  internal static MaybeLabel Optional = null;
                               }
                               """;
 
         const string catalog = """
                                length | Metre | global::System.Single | length=1
                                temperature | Kelvin | float | temperature=1
+                               maybeLength | MaybeMetre | float? | length=1
+                               maybeCount | MaybeCount | System.Int32? | count=1
+                               label | Label | string | label=1
+                               optionalLabel | MaybeLabel | string? | label=1
+                               thing | Thing | object | thing=1
                                convert | temperature | Celsius | float | 1 | 273.15
                                """;
 
@@ -509,27 +520,40 @@ public sealed class DimensionalAnalysisAnalyzerTests
         Assert.That(
             compilation.GetDiagnostics().Where(diagnostic => diagnostic.Severity != DiagnosticSeverity.Hidden),
             Is.Empty);
+
+        string generated = GeneratedSource(compilation);
+        Assert.Multiple(() =>
+        {
+            Assert.That(generated, Does.Contain("global using MaybeMetre = global::System.Nullable<global::System.Single>;"));
+            Assert.That(generated, Does.Contain("global using MaybeCount = global::System.Nullable<global::System.Int32>;"));
+            Assert.That(generated, Does.Contain("global using Label = global::System.String;"));
+            Assert.That(generated, Does.Contain("global using MaybeLabel = global::System.String;"));
+            Assert.That(generated, Does.Contain("global using Thing = global::System.Object;"));
+        });
     }
 
-    [TestCase(LanguageVersion.CSharp10)]
-    [TestCase(LanguageVersion.CSharp12)]
-    public void NativeIntegerStorageKeepsKeywordAlias(LanguageVersion languageVersion)
+    [TestCase("handle | Handle | nint | length=1", "nint")]
+    [TestCase("handle | Handle | nuint | length=1", "nuint")]
+    [TestCase("handle | Handle | nint? | length=1", "nint?")]
+    [TestCase("handle | Handle | System.IntPtr | length=1", "System.IntPtr")]
+    [TestCase("handle | Handle | global::System.UIntPtr | length=1", "global::System.UIntPtr")]
+    public void NativeIntegerStorageIsRejected(string line, string storage)
     {
-        const string source = "internal static class C { internal static Handle Next(Handle h) => h + 1; }";
-        const string catalog = "handle | Handle | nint | length=1";
-
         var compilation = GenerateAliases(
-            CreateCompilation(source, languageVersion: languageVersion),
-            catalog,
-            out ImmutableArray<Diagnostic> generatorDiagnostics);
+            CreateCompilation("internal static class C { }"),
+            line,
+            out ImmutableArray<Diagnostic> diagnostics);
 
-        Assert.That(generatorDiagnostics, Is.Empty);
-        Assert.That(
-            compilation.SyntaxTrees.Select(tree => tree.ToString()),
-            Has.Some.Contains("global using Handle = nint;"));
-        Assert.That(
-            compilation.GetDiagnostics().Where(diagnostic => diagnostic.Severity != DiagnosticSeverity.Hidden),
-            Is.Empty);
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                diagnostics.Select(diagnostic => diagnostic.GetMessage()),
+                Is.EqualTo(new[]
+                {
+                    $"Invalid units catalog: Storage type '{storage}' is not supported. Use 'int' or 'long'."
+                }));
+            Assert.That(GeneratedSource(compilation), Is.Empty);
+        });
     }
 
     [Test]
@@ -2846,6 +2870,320 @@ public sealed class DimensionalAnalysisAnalyzerTests
         });
     }
 
+    [Test]
+    public async Task DeclarationFromAProjectReferenceDoesNotCrashTheAnalyzer()
+    {
+        const string library = """
+                               public static class Lib
+                               {
+                                   public static Kelvin Ambient;
+                                   public static Kelvin[] History = new Kelvin[1];
+                               }
+                               """;
+
+        const string source = """
+                              internal static class Physics
+                              {
+                                  internal static void Run(Pascal pressure)
+                                  {
+                                      Lib.Ambient = pressure;
+                                      Pascal fromArray = Lib.History[0];
+                                  }
+                              }
+                              """;
+
+        var libraryCompilation = GenerateAliases(CreateCompilation(library, "Library"), Catalog, out _);
+
+        // A compilation reference keeps the library's syntax trees, which the app compilation does not contain.
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(
+            source,
+            Catalog,
+            libraryCompilation.ToMetadataReference());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnostics.Select(diagnostic => diagnostic.Id), Has.None.StartWith("AD"));
+            Assert.That(
+                diagnostics.Select(diagnostic => diagnostic.GetMessage()),
+                Is.EqualTo(new[] { "Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'" }));
+        });
+    }
+
+    [Test]
+    public async Task UserTypeNamedLikeAnAliasHasNoQuantity()
+    {
+        const string source = """
+                              namespace App
+                              {
+                                  internal readonly struct Metre
+                                  {
+                                      public readonly float Value;
+                                      public Metre(float value) => Value = value;
+                                      public static Metre operator *(Metre a, Metre b) => new(a.Value * b.Value);
+                                  }
+
+                                  internal static class Geometry
+                                  {
+                                      internal static Metre Square(Metre side)
+                                      {
+                                          Metre area = side * side;
+                                          return area;
+                                      }
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task IndexerResultThatIsNotTheAliasTypeHasNoQuantity()
+    {
+        const string source = """
+                              using System.Collections.Generic;
+                              using System.Linq;
+
+                              internal static class Physics
+                              {
+                                  internal static void Run(ILookup<string, Metre> lookup, Dictionary<string, Metre> map)
+                                  {
+                                      var group = lookup["a"];
+                                      IEnumerable<Metre> typed = lookup["a"];
+                                      Metre valid = map["a"];
+                                      Second wrong = map["a"];
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(
+            diagnostics.Select(diagnostic => diagnostic.GetMessage()),
+            Is.EqualTo(new[] { "Cannot assign 'length' to 'time'" }));
+    }
+
+    [Test]
+    public async Task CompoundAssignmentIntoAnUnannotatedTargetIsQnt002()
+    {
+        const string source = """
+                              internal static class Physics
+                              {
+                                  internal static void Run(Pascal pressure)
+                                  {
+                                      float total = 0f;
+                                      total += pressure;
+                                      total -= pressure;
+                                      total *= pressure;
+                                      total /= pressure;
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(
+            diagnostics.Select(diagnostic => diagnostic.GetMessage()),
+            Is.EqualTo(new[]
+            {
+                "Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'",
+                "Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'",
+                "Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'",
+                "Cannot assign 'length^1 mass^-1 time^2' to 'unannotated scalar'"
+            }));
+    }
+
+    [Test]
+    public async Task CompoundAssignmentIntoAnUnannotatedTargetAcceptsScalarsAndStrings()
+    {
+        const string source = """
+                              internal static class Physics
+                              {
+                                  internal static void Run(Pascal pressure, Ratio ratio, float raw, Metre a, Metre b)
+                                  {
+                                      float total = 0f;
+                                      total += 1f;
+                                      total += raw;
+                                      total *= ratio;
+                                      total /= a / b;
+                                      total *= 2f;
+                                      string text = "";
+                                      text += pressure;
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task MessagesUseTheInvariantCulture()
+    {
+        const string source = """
+                              internal static class Physics
+                              {
+                                  internal static Kelvin Run(Pascal pressure) => pressure;
+                              }
+                              """;
+
+        CultureInfo culture = CultureInfo.CurrentCulture;
+        CultureInfo uiCulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            // sv-SE writes the minus sign as U+2212.
+            CultureInfo.CurrentCulture = CultureInfo.CurrentUICulture = new CultureInfo("sv-SE");
+
+            ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+            Assert.That(
+                diagnostics.Single().GetMessage(),
+                Is.EqualTo("Returned expression has quantity 'length^-1 mass^1 time^-2', but the method returns 'temperature'"));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = culture;
+            CultureInfo.CurrentUICulture = uiCulture;
+        }
+    }
+
+    [Test]
+    public void GeneratedConversionsCompileWithDocumentationChecks()
+    {
+        var compilation = GenerateAliases(
+            CreateCompilation(
+                "/// <summary>Documented.</summary>\npublic static class C { }",
+                documentationMode: DocumentationMode.Diagnose),
+            "temperature | Kelvin | float | temperature=1\nconvert | temperature | Celsius | float | 1 | 273.15",
+            out ImmutableArray<Diagnostic> generatorDiagnostics);
+
+        Assert.That(generatorDiagnostics, Is.Empty);
+        Assert.That(
+            compilation.GetDiagnostics().Where(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning),
+            Is.Empty);
+    }
+
+    [Test]
+    public void ConversionsInTwoReferencedProjectsDoNotConflict()
+    {
+        const string catalog =
+            "temperature | Kelvin | float | temperature=1\nconvert | temperature | Celsius | float | 1 | 273.15";
+
+        var library = GenerateAliases(CreateCompilation("public static class Lib { }", "Library"), catalog, out _);
+        var app = GenerateAliases(
+            CreateCompilation(
+                "internal static class C { internal static Kelvin Run() => Magnitudo.Generated.UnitConversions.FromCelsius(1f); }",
+                "App",
+                [library.ToMetadataReference()]),
+            catalog,
+            out _);
+
+        Assert.That(
+            app.GetDiagnostics().Where(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning),
+            Is.Empty);
+    }
+
+    [Test]
+    public void GeneratedSourceUsesLineFeedsAndNeutralWording()
+    {
+        var compilation = GenerateAliases(
+            CreateCompilation("internal static class C { }"),
+            "length | Metre | float | length=1\nconvert | length | Inch | float | 0.0254 | 0",
+            out _);
+
+        string generated = GeneratedSource(compilation);
+        Assert.Multiple(() =>
+        {
+            Assert.That(generated, Does.Not.Contain("\r"));
+            Assert.That(generated, Does.Contain("the catalog's canonical units"));
+            Assert.That(generated, Does.Not.Contain("solver"));
+        });
+    }
+
+    [TestCase("count | Count | int | count=1\nconvert | count | Dozen | int | 12 | 0",
+        "Conversion 'Dozen' needs a float, double, or decimal storage type, not 'int'.")]
+    [TestCase("count | Count | int | count=1\nconvert | count | Dozen | float? | 12 | 0",
+        "Conversion 'Dozen' needs a float, double, or decimal storage type, not 'float?'.")]
+    [TestCase("length | Metre | float | length=1\nconvert | length | Big | float | 1e39 | 0",
+        "Conversion scale is outside the range of 'float'.")]
+    [TestCase("length | Metre | float | length=1\nconvert | length | Tiny | float | 1e-50 | 0",
+        "Conversion scale rounds to zero in 'float'.")]
+    [TestCase("length | Metre | float | length=1\nconvert | length | Far | float | 1 | 1e39",
+        "Conversion offset is outside the range of 'float'.")]
+    [TestCase("length | Metre | decimal | length=1\nconvert | length | Big | decimal | 1e30 | 0",
+        "Conversion scale is outside the range of 'decimal'.")]
+    [TestCase("length | Metre | decimal | length=1\nconvert | length | Tiny | decimal | 1e-30 | 0",
+        "Conversion scale rounds to zero in 'decimal'.")]
+    [TestCase("length | Metre | decimal | length=1\nconvert | length | Far | System.Decimal | 1 | -1e30",
+        "Conversion offset is outside the range of 'System.Decimal'.")]
+    public void CatalogRejectsConversionsThatDoNotFitTheirStorage(string catalog, string message)
+    {
+        ImmutableArray<Diagnostic> diagnostics = ParseCatalog(catalog);
+
+        Assert.That(
+            diagnostics.Select(diagnostic => diagnostic.GetMessage()),
+            Is.EqualTo(new[] { "Invalid units catalog: " + message }));
+    }
+
+    [Test]
+    public void ConversionsInDoubleAndDecimalStorageCompile()
+    {
+        var compilation = GenerateAliases(
+            CreateCompilation("internal static class C { }"),
+            "length | Metre | double | length=1\n" +
+            "convert | length | Inch | double | 0.0254 | 0\n" +
+            "convert | length | Mile | System.Decimal | 1609.344 | 0\n" +
+            "convert | length | Micro | decimal | 1e-6 | 1e-3\n" +
+            "convert | length | Parsec | System.Single | 3.0857e16 | 0",
+            out ImmutableArray<Diagnostic> diagnostics);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnostics, Is.Empty);
+            Assert.That(
+                compilation.GetDiagnostics().Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error),
+                Is.Empty);
+        });
+    }
+
+    [TestCase("var")]
+    [TestCase("dynamic")]
+    [TestCase("nint")]
+    [TestCase("nuint")]
+    [TestCase("_")]
+    [TestCase("class")]
+    [TestCase("float")]
+    public void CatalogRejectsKeywordAliasNames(string alias)
+    {
+        ImmutableArray<Diagnostic> diagnostics = ParseCatalog($"length | {alias} | float | length=1");
+
+        Assert.That(
+            diagnostics.Select(diagnostic => diagnostic.GetMessage()),
+            Is.EqualTo(new[] { $"Invalid units catalog: Alias '{alias}' is a C# keyword." }));
+    }
+
+    [Test]
+    public void CatalogWithOnlyConversionsReportsTheUnknownQuantity()
+    {
+        var compilation = GenerateAliases(
+            CreateCompilation("internal static class C { }"),
+            "convert | length | Inch | float | 0.0254 | 0",
+            out ImmutableArray<Diagnostic> diagnostics);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                diagnostics.Select(diagnostic => diagnostic.GetMessage()),
+                Is.EqualTo(new[]
+                {
+                    "Invalid units catalog: Conversion 'Inch' references unknown quantity 'length'."
+                }));
+            Assert.That(GeneratedSource(compilation), Is.Empty);
+        });
+    }
+
     private static async Task<ImmutableArray<Diagnostic>> Analyze(
         string source, string catalog,
         params MetadataReference[] references)
@@ -2880,6 +3218,14 @@ public sealed class DimensionalAnalysisAnalyzerTests
         return output;
     }
 
+    private static string GeneratedSource(Compilation compilation)
+    {
+        return string.Concat(
+            compilation.SyntaxTrees
+                .Where(tree => tree.FilePath.Contains("QuantityAliases"))
+                .Select(tree => tree.ToString()));
+    }
+
     private static ImmutableArray<Diagnostic> ParseCatalog(string catalog)
     {
         GenerateAliases(CreateCompilation("internal static class C { }"), catalog, out var diagnostics);
@@ -2903,7 +3249,8 @@ public sealed class DimensionalAnalysisAnalyzerTests
     private static CSharpCompilation CreateCompilation(
         string source, string assemblyName = "AnalyzerTest",
         IEnumerable<MetadataReference>? additionalReferences = null,
-        LanguageVersion languageVersion = LanguageVersion.Latest)
+        LanguageVersion languageVersion = LanguageVersion.Latest,
+        DocumentationMode documentationMode = DocumentationMode.Parse)
     {
         string[] trustedAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator);
@@ -2916,7 +3263,7 @@ public sealed class DimensionalAnalysisAnalyzerTests
 
         return CSharpCompilation.Create(
             assemblyName,
-            [CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(languageVersion))],
+            [CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(languageVersion, documentationMode))],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }

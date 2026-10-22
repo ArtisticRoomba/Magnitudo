@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Immutable;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -70,6 +71,9 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
 
         private readonly Compilation _compilation;
 
+        // The analyzer runs with concurrent execution, so several threads can look up the same tree.
+        private readonly ConcurrentDictionary<SyntaxTree, SemanticModel> _semanticModels = new();
+
         internal QuantityAnalysis(Compilation compilation, UnitCatalog catalog)
         {
             _compilation = compilation;
@@ -110,14 +114,23 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
             var operation = (ICompoundAssignmentOperation)context.Operation;
             var target = Infer(operation.Target);
             var value = Infer(operation.Value);
-            if (!target.IsKnown || !value.IsKnown)
+
+            // A literal or unannotated value takes the target's quantity, like a plain assignment.
+            if (!value.IsKnown)
                 return;
 
+            // An unannotated target stands for a dimensionless scalar. `total += pressure` would store a
+            // dimensioned value in it, which loses the unit. Only numeric targets count, so string
+            // concatenation and user-defined operators on other types stay quiet.
+            if (!target.IsKnown && !IsNumeric(operation.Target.Type))
+                return;
+
+            var left = target.IsKnown ? target : QuantityValue.LiteralScalar;
             var result = operation.OperatorKind switch
             {
                 BinaryOperatorKind.Add or BinaryOperatorKind.Subtract => value,
-                BinaryOperatorKind.Multiply => target.Multiply(value),
-                BinaryOperatorKind.Divide => target.Divide(value),
+                BinaryOperatorKind.Multiply => left.Multiply(value),
+                BinaryOperatorKind.Divide => left.Divide(value),
                 _ => QuantityValue.Unknown
             };
 
@@ -130,6 +143,21 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                         result,
                         target));
             }
+        }
+
+        private static bool IsNumeric(ITypeSymbol? type)
+        {
+            type = UnwrapNullable(type);
+            return type is not null &&
+                   (type.SpecialType is >= SpecialType.System_SByte and <= SpecialType.System_Double ||
+                    type.SpecialType is SpecialType.System_IntPtr or SpecialType.System_UIntPtr);
+        }
+
+        private static ITypeSymbol? UnwrapNullable(ITypeSymbol? type)
+        {
+            return type is INamedTypeSymbol { OriginalDefinition.SpecialType: SpecialType.System_Nullable_T } nullable
+                ? nullable.TypeArguments[0]
+                : type;
         }
 
         internal void AnalyzeVariable(OperationAnalysisContext context)
@@ -352,12 +380,12 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 {
                     // An indexer that declares its own quantity takes precedence over the element type.
                     var declared = GetSymbolQuantity(property.Property);
-                    return declared.IsKnown ? declared : GetElementQuantity(property.Instance);
+                    return declared.IsKnown ? declared : GetElementQuantity(property.Instance, property.Type);
                 }
                 case IPropertyReferenceOperation property:
                     return GetSymbolQuantity(property.Property);
                 case IArrayElementReferenceOperation arrayElement:
-                    return GetElementQuantity(arrayElement.ArrayReference);
+                    return GetElementQuantity(arrayElement.ArrayReference, arrayElement.Type);
                 case IInvocationOperation invocation:
                 {
                     var declared = GetMethodReturnQuantity(invocation.TargetMethod);
@@ -412,7 +440,16 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
             };
         }
 
-        private QuantityValue GetElementQuantity(IOperation? operation)
+        /// <summary>
+        ///     Reads the element quantity of an indexed or enumerated expression.
+        /// </summary>
+        /// <param name="operation">The array or collection that the code indexes.</param>
+        /// <param name="resultType">
+        ///     The type of the indexing expression. The syntax-derived quantity applies only when this type is the
+        ///     alias target. Without the check, <c>ILookup&lt;string, Metre&gt;</c> would give its
+        ///     <c>IEnumerable&lt;Metre&gt;</c> results a length.
+        /// </param>
+        private QuantityValue GetElementQuantity(IOperation? operation, ITypeSymbol? resultType)
         {
             operation = Unwrap(operation);
             if (operation is IInvocationOperation invocation)
@@ -421,7 +458,7 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                     invocation.TargetMethod.GetReturnTypeAttributes(),
                     ElementQuantityAttributeName);
 
-                return returned.IsKnown ? returned : GetSyntaxQuantity(invocation.TargetMethod, true);
+                return returned.IsKnown ? returned : GetSyntaxQuantity(invocation.TargetMethod, true, resultType);
             }
 
             ISymbol? symbol = operation switch
@@ -437,7 +474,7 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 return QuantityValue.Unknown;
 
             var attributed = GetAttributeQuantity(symbol, ElementQuantityAttributeName);
-            return attributed.IsKnown ? attributed : GetSyntaxQuantity(symbol, true);
+            return attributed.IsKnown ? attributed : GetSyntaxQuantity(symbol, true, resultType);
         }
 
         private QuantityValue GetSymbolQuantity(ISymbol symbol)
@@ -507,10 +544,28 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
             return QuantityValue.Unknown;
         }
 
-        private QuantityValue GetSyntaxQuantity(ISymbol symbol, bool element)
+        /// <summary>
+        ///     Reads a quantity from the alias in the declared type of <paramref name="symbol" />.
+        /// </summary>
+        /// <param name="symbol">The declared symbol.</param>
+        /// <param name="element">Reads the element type of an array or generic type instead.</param>
+        /// <param name="expectedType">
+        ///     When not <see langword="null" />, the alias must erase to this type, ignoring <c>Nullable&lt;T&gt;</c>.
+        /// </param>
+        /// <remarks>
+        ///     Only a real alias resolves. A user type that shares a name with a catalog alias is not a quantity.
+        ///     Declarations in another compilation have no syntax tree here, so they count as unannotated. That
+        ///     matches the rule that aliases do not cross assemblies.
+        /// </remarks>
+        private QuantityValue GetSyntaxQuantity(ISymbol symbol, bool element, ITypeSymbol? expectedType = null)
         {
             foreach (var syntaxReference in symbol.DeclaringSyntaxReferences)
             {
+                // A CompilationReference from an IDE project reference exposes syntax of another compilation.
+                // GetSemanticModel throws for such a tree.
+                if (!_compilation.ContainsSyntaxTree(syntaxReference.SyntaxTree))
+                    continue;
+
                 var syntax = syntaxReference.GetSyntax();
                 var type = GetDeclaredType(syntax);
                 if (type is null)
@@ -526,11 +581,16 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 if (type is null)
                     continue;
 
-                var semanticModel = _compilation.GetSemanticModel(type.SyntaxTree);
+                var semanticModel = _semanticModels.GetOrAdd(type.SyntaxTree, tree => _compilation.GetSemanticModel(tree));
                 var alias = semanticModel.GetAliasInfo(type);
-                string aliasName = alias?.Name ?? (type as IdentifierNameSyntax)?.Identifier.ValueText ?? string.Empty;
-                if (_catalog.TryGetAlias(aliasName, out var definition))
-                    return QuantityValue.From(definition);
+                if (alias is null || !_catalog.TryGetAlias(alias.Name, out var definition))
+                    continue;
+
+                if (expectedType is not null &&
+                    !SymbolEqualityComparer.Default.Equals(alias.Target, UnwrapNullable(expectedType)))
+                    continue;
+
+                return QuantityValue.From(definition);
             }
 
             return QuantityValue.Unknown;

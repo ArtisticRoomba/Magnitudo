@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 
 namespace Magnitudo.Analyzers;
@@ -54,7 +55,8 @@ internal sealed class UnitCatalog
     ///     Receives QNT000 for each invalid line. When <see langword="null" />, the parser skips invalid lines silently.
     /// </param>
     /// <returns>
-    ///     The catalog, or <see cref="Empty" /> when no line defines a quantity. The generator and the analyzer both call
+    ///     The catalog, or <see cref="Empty" /> when no line defines a quantity. A catalog with only conversion
+    ///     lines is empty, but it still reports each conversion as an unknown quantity. The generator and the analyzer both call
     ///     this method, but only the generator passes <paramref name="reportDiagnostic" />. That way each error is
     ///     reported once.
     /// </returns>
@@ -124,7 +126,7 @@ internal sealed class UnitCatalog
             }
         }
 
-        if (definitions.Count == 0)
+        if (definitions.Count == 0 && conversions.Count == 0)
             return Empty;
 
         var catalog = new UnitCatalog(definitions, conversions);
@@ -143,7 +145,7 @@ internal sealed class UnitCatalog
             }
         }
 
-        return catalog;
+        return definitions.Count == 0 ? Empty : catalog;
     }
 
     private static QuantityDefinition ParseQuantityLine(string line)
@@ -157,6 +159,13 @@ internal sealed class UnitCatalog
         string storageType = parts[2].Trim();
         if (!IsIdentifier(id) || !IsIdentifier(alias) || storageType.Length == 0)
             throw new FormatException("Quantity IDs and aliases must be identifiers and a storage type is required.");
+
+        if (IsReservedAliasName(alias))
+            throw new FormatException($"Alias '{alias}' is a C# keyword.");
+
+        if (StorageTypes.IsNativeInteger(storageType))
+            throw new FormatException(
+                $"Storage type '{storageType}' is not supported. Use 'int' or 'long'.");
 
         var dimensions = ImmutableSortedDictionary.CreateBuilder<string, int>(StringComparer.Ordinal);
         string dimensionText = parts[3].Trim();
@@ -199,6 +208,10 @@ internal sealed class UnitCatalog
         if (!IsIdentifier(quantityId) || !IsIdentifier(unitName) || storageType.Length == 0)
             throw new FormatException("Conversion quantity IDs and unit names must be identifiers.");
 
+        if (!StorageTypes.IsFloatingPoint(storageType))
+            throw new FormatException(
+                $"Conversion '{unitName}' needs a float, double, or decimal storage type, not '{storageType}'.");
+
         if (!double.TryParse(
                 parts[4].Trim(),
                 NumberStyles.Float,
@@ -218,7 +231,30 @@ internal sealed class UnitCatalog
             double.IsInfinity(offset))
             throw new FormatException("Conversion offset must be a finite number.");
 
+        if (!StorageTypes.Fits(scale, storageType, out bool isZero))
+            throw new FormatException($"Conversion scale is outside the range of '{storageType}'.");
+
+        if (isZero)
+            throw new FormatException($"Conversion scale rounds to zero in '{storageType}'.");
+
+        if (!StorageTypes.Fits(offset, storageType, out _))
+            throw new FormatException($"Conversion offset is outside the range of '{storageType}'.");
+
         return new UnitConversionDefinition(quantityId, unitName, storageType, scale, offset);
+    }
+
+    /// <summary>
+    ///     Returns <see langword="true" /> when <paramref name="alias" /> cannot be a type name.
+    /// </summary>
+    /// <remarks>
+    ///     Reserved keywords cannot name a type. The contextual names below are legal identifiers, but an alias
+    ///     with that name would change what the same word means elsewhere: <c>var x = 1;</c> would declare a
+    ///     <c>float</c>-typed local.
+    /// </remarks>
+    private static bool IsReservedAliasName(string alias)
+    {
+        return SyntaxFacts.GetKeywordKind(alias) != SyntaxKind.None ||
+               alias is "var" or "dynamic" or "nint" or "nuint" or "_";
     }
 
     private static bool IsConversionLine(string line)
@@ -363,6 +399,124 @@ internal sealed class DimensionVector : IEquatable<DimensionVector>
                 " ",
                 _exponents.Select(pair => _exponents.Count == 1 && pair.Value == 1
                     ? pair.Key
-                    : $"{pair.Key}^{pair.Value}"));
+                    : pair.Key + "^" + pair.Value.ToString(CultureInfo.InvariantCulture)));
+    }
+}
+
+/// <summary>
+///     Recognizes the storage type names that the generator maps, in keyword and <c>System</c> forms.
+/// </summary>
+internal static class StorageTypes
+{
+    /// <summary>
+    ///     Returns the C# keyword for a primitive type written as a keyword, <c>System.X</c>, or
+    ///     <c>global::System.X</c>. Returns <see langword="null" /> for any other name.
+    /// </summary>
+    internal static string? GetKeyword(string type)
+    {
+        type = type.Trim();
+        if (type.StartsWith("global::", StringComparison.Ordinal))
+            type = type.Substring("global::".Length);
+
+        if (type.StartsWith("System.", StringComparison.Ordinal))
+        {
+            return type.Substring("System.".Length) switch
+            {
+                "Boolean" => "bool",
+                "Byte" => "byte",
+                "SByte" => "sbyte",
+                "Int16" => "short",
+                "UInt16" => "ushort",
+                "Int32" => "int",
+                "UInt32" => "uint",
+                "Int64" => "long",
+                "UInt64" => "ulong",
+                "Single" => "float",
+                "Double" => "double",
+                "Decimal" => "decimal",
+                "Char" => "char",
+                "String" => "string",
+                "Object" => "object",
+                "IntPtr" => "nint",
+                "UIntPtr" => "nuint",
+                _ => null
+            };
+        }
+
+        return type switch
+        {
+            "bool" or "byte" or "sbyte" or "short" or "ushort" or "int" or "uint" or "long" or "ulong"
+                or "float" or "double" or "decimal" or "char" or "string" or "object" or "nint" or "nuint" => type,
+            _ => null
+        };
+    }
+
+    /// <summary>
+    ///     Returns <see langword="true" /> for <c>float</c>, <c>double</c>, <c>decimal</c>, and their <c>System</c>
+    ///     forms. A nullable type is not floating-point storage for a conversion.
+    /// </summary>
+    internal static bool IsFloatingPoint(string type)
+    {
+        return GetKeyword(type) is "float" or "double" or "decimal";
+    }
+
+    /// <summary>
+    ///     Returns <see langword="true" /> for <c>nint</c>, <c>nuint</c>, <c>IntPtr</c>, <c>UIntPtr</c>, and their
+    ///     nullable forms.
+    /// </summary>
+    internal static bool IsNativeInteger(string type)
+    {
+        type = type.Trim();
+        if (type.EndsWith("?", StringComparison.Ordinal))
+            type = type.Substring(0, type.Length - 1);
+
+        return GetKeyword(type) is "nint" or "nuint";
+    }
+
+    /// <summary>
+    ///     Formats <paramref name="value" /> with the invariant culture so that it reads as a floating-point literal.
+    /// </summary>
+    internal static string FormatNumber(double value)
+    {
+        string text = value.ToString("R", CultureInfo.InvariantCulture);
+        if (!text.Contains('.') && !text.Contains('E') && !text.Contains('e'))
+            text += ".0";
+
+        return text;
+    }
+
+    /// <summary>
+    ///     Checks that the generated literal for <paramref name="value" /> compiles in <paramref name="type" />.
+    /// </summary>
+    /// <param name="value">A finite number.</param>
+    /// <param name="type">A floating-point storage type.</param>
+    /// <param name="isZero">
+    ///     Set when a nonzero <paramref name="value" /> becomes zero in <paramref name="type" />. Dividing by such
+    ///     a scale fails at run time.
+    /// </param>
+    /// <returns><see langword="false" /> when the literal is outside the range of the type.</returns>
+    internal static bool Fits(double value, string type, out bool isZero)
+    {
+        isZero = false;
+        switch (GetKeyword(type))
+        {
+            case "float":
+                float single = (float)value;
+                isZero = value != 0d && single == 0f;
+                return !float.IsInfinity(single);
+            case "decimal":
+                // The compiler parses the literal text as a decimal, so the check does the same.
+                if (!decimal.TryParse(
+                        FormatNumber(value),
+                        NumberStyles.Float,
+                        CultureInfo.InvariantCulture,
+                        out decimal number))
+                    return false;
+
+                isZero = value != 0d && number == 0m;
+                return true;
+            default:
+                return true;
+        }
     }
 }
