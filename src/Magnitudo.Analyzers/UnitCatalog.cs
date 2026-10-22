@@ -5,6 +5,9 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace Magnitudo.Analyzers;
 
+/// <summary>
+///     The parsed contents of all <c>*.magnitudo</c> files: quantity definitions and unit conversions.
+/// </summary>
 internal sealed class UnitCatalog
 {
     private readonly ImmutableDictionary<string, QuantityDefinition> _byAlias;
@@ -19,6 +22,7 @@ internal sealed class UnitCatalog
             definition => definition.Alias,
             StringComparer.Ordinal);
 
+        // The first definition wins if an ID repeats. Parse rejects duplicates before it builds a catalog.
         _byId = materialized.GroupBy(definition => definition.Id, StringComparer.Ordinal)
             .ToImmutableDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
 
@@ -41,6 +45,19 @@ internal sealed class UnitCatalog
         return _byId.TryGetValue(id, out definition!);
     }
 
+    /// <summary>
+    ///     Parses every <c>*.magnitudo</c> file in <paramref name="files" />.
+    /// </summary>
+    /// <param name="files">The additional files of the compilation. Other extensions are ignored.</param>
+    /// <param name="cancellationToken">Cancels reading the file text.</param>
+    /// <param name="reportDiagnostic">
+    ///     Receives QNT000 for each invalid line. When <see langword="null" />, the parser skips invalid lines silently.
+    /// </param>
+    /// <returns>
+    ///     The catalog, or <see cref="Empty" /> when no line defines a quantity. The generator and the analyzer both call
+    ///     this method, but only the generator passes <paramref name="reportDiagnostic" />. That way each error is
+    ///     reported once.
+    /// </returns>
     internal static UnitCatalog Parse(
         IEnumerable<AdditionalText> files, CancellationToken cancellationToken,
         Action<Diagnostic>? reportDiagnostic = null)
@@ -220,6 +237,10 @@ internal sealed class UnitCatalog
     }
 }
 
+/// <summary>
+///     One <c>convert</c> line: a unit of a quantity, defined as <c>value * scale + offset</c> in the quantity's
+///     canonical unit.
+/// </summary>
 internal sealed class UnitConversionDefinition
 {
     internal UnitConversionDefinition(
@@ -240,6 +261,9 @@ internal sealed class UnitConversionDefinition
     internal double Offset { get; }
 }
 
+/// <summary>
+///     One quantity line: a stable ID, the alias, the storage type behind the alias, and the dimension.
+/// </summary>
 internal sealed class QuantityDefinition
 {
     internal QuantityDefinition(string id, string alias, string storageType, DimensionVector dimensions)
@@ -256,6 +280,13 @@ internal sealed class QuantityDefinition
     internal DimensionVector Dimensions { get; }
 }
 
+/// <summary>
+///     A dimension as an exponent vector over named base dimensions.
+/// </summary>
+/// <remarks>
+///     The vector never stores a zero exponent, so two vectors are equal when their nonzero exponents match.
+///     Dimensionless is the empty vector. Equality ignores quantity names and IDs.
+/// </remarks>
 internal sealed class DimensionVector : IEquatable<DimensionVector>
 {
     private readonly ImmutableSortedDictionary<string, int> _exponents;
@@ -270,6 +301,9 @@ internal sealed class DimensionVector : IEquatable<DimensionVector>
         return other is not null && _exponents.SequenceEqual(other._exponents);
     }
 
+    /// <summary>
+    ///     Returns <see langword="true" /> when the dimension is dimensionless.
+    /// </summary>
     public bool IsScalar()
     {
         return _exponents.All(e => e.Value == 0);

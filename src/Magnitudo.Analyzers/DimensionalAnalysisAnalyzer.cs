@@ -6,7 +6,14 @@ using Microsoft.CodeAnalysis.Operations;
 
 namespace Magnitudo.Analyzers;
 
-/// <summary>Checks dimensional compatibility while leaving all runtime numeric types unchanged.</summary>
+/// <summary>
+///     Reports QNT001 to QNT004 where two known quantities disagree or a known quantity loses its dimension.
+/// </summary>
+/// <remarks>
+///     The analyzer does nothing when the compilation has no catalog quantities. It reads quantities from
+///     <c>[Quantity]</c> attributes and from alias names in the declaring syntax, because the compiler erases aliases
+///     from symbols.
+/// </remarks>
 [DiagnosticAnalyzer(LanguageNames.CSharp)]
 public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
 {
@@ -47,6 +54,9 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
         });
     }
 
+    /// <summary>
+    ///     Holds the per-compilation catalog and the inference rules for all registered operation actions.
+    /// </summary>
     private sealed class QuantityAnalysis
     {
         private const string QuantityAttributeName = "Magnitudo.QuantityAttribute";
@@ -151,8 +161,8 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                     if (operation.Value is IDiscardOperation)
                         return;
 
-                    // Value flows parameter -> argument: does the argument's target
-                    // accept what the parameter is declared to produce?
+                    // Data flows from the parameter to the argument, so the caller's variable is the target
+                    // and the parameter's quantity is the value.
                     var target = Infer(operation.Value);
                     if (IsIncompatibleAssignment(target, declared))
                     {
@@ -169,8 +179,8 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 }
                 case RefKind.Ref:
                 {
-                    // An unannotated ref parameter accepts anything, like a plain argument, so generic
-                    // helpers such as Swap<T>(ref T, ref T) work. A declared one needs an exact match.
+                    // An unannotated ref parameter accepts anything, so Swap<T>(ref T, ref T) works.
+                    // A declared ref parameter needs a matching quantity.
                     var target = Infer(operation.Value);
                     if (IsIncompatibleArgument(declared, target))
                     {
@@ -210,8 +220,8 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
             if (operation.ReturnedValue is null)
                 return;
 
-            // ContainingSymbol is the enclosing member, so a return inside a lambda or local function
-            // has to find its own function first.
+            // ContainingSymbol is the enclosing member. A return inside a lambda or local function belongs
+            // to that inner function, so the code looks for it first.
             var function = GetEnclosingFunction(operation, out bool isLambda) ??
                            context.ContainingSymbol as IMethodSymbol;
 
@@ -220,8 +230,8 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
 
             var expected = GetReturnStatementQuantity(function);
 
-            // A lambda's return type usually comes from its delegate type, where the alias is already
-            // erased, so only check lambdas that declare a quantity.
+            // A lambda usually takes its return type from a delegate type, where the alias is already
+            // erased. The analyzer checks only lambdas that declare a quantity.
             if (isLambda && !expected.IsKnown)
                 return;
 
@@ -241,7 +251,7 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
         {
             var operation = (IInvocationOperation)context.Operation;
 
-            // CopySign(x, y) only takes the sign of y, so y may have any quantity.
+            // CopySign(x, y) uses only the sign of y, so y can have any quantity.
             if (!IsQuantityPreservingMath(operation.TargetMethod) || IsCopySign(operation.TargetMethod))
                 return;
 
@@ -288,6 +298,13 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
             }
         }
 
+        /// <summary>
+        ///     Computes the quantity state of an expression.
+        /// </summary>
+        /// <remarks>
+        ///     Anything the analyzer cannot follow is <see cref="QuantityValue.Unknown" />. Inference never reports
+        ///     errors itself.
+        /// </remarks>
         private QuantityValue Infer(IOperation? operation)
         {
             if (operation is null)
@@ -309,7 +326,7 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                     return GetSymbolQuantity(field.Field);
                 case IPropertyReferenceOperation property when property.Property.IsIndexer:
                 {
-                    // An indexer that declares its own quantity wins over the container's element type.
+                    // An indexer that declares its own quantity takes precedence over the element type.
                     var declared = GetSymbolQuantity(property.Property);
                     return declared.IsKnown ? declared : GetElementQuantity(property.Instance);
                 }
@@ -416,7 +433,7 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
 
         private QuantityValue GetReturnStatementQuantity(IMethodSymbol method)
         {
-            // `return x;` in an async method produces the T of Task<T>.
+            // In an async method, `return x;` produces the T of Task<T>, not the task itself.
             return method.IsAsync ? GetAwaitedQuantity(method) : GetMethodReturnQuantity(method);
         }
 
@@ -478,7 +495,7 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 if (element)
                     type = GetElementType(type);
 
-                // `Metre?` and `ref Metre` carry the same quantity as `Metre`.
+                // `Metre?` and `ref Metre` have the same quantity as `Metre`.
                 while (type is NullableTypeSyntax or RefTypeSyntax)
                     type = type is NullableTypeSyntax nullable ? nullable.ElementType : ((RefTypeSyntax)type).Type;
 
@@ -586,42 +603,52 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
             return left.IsKnown && right.IsKnown && !left.Dimensions!.Equals(right.Dimensions);
         }
 
+        /// <summary>
+        ///     Decides whether <paramref name="value" /> can flow into <paramref name="target" /> by assignment,
+        ///     initializer, or return.
+        /// </summary>
         private static bool IsIncompatibleAssignment(QuantityValue target, QuantityValue value)
         {
-            // Both sides known: dimensions must match, as before.
             if (target.IsKnown && value.IsKnown)
                 return !target.Dimensions!.Equals(value.Dimensions);
 
-            // Known target accepting an unknown/unannotated/literal source is fine —
-            // e.g. `Length x = 0f;` or `Length x = someUnannotatedFloat;`.
+            // A literal or unannotated value can claim a unit: `Kelvin t = raw;`.
             if (target.IsKnown)
                 return false;
 
-            // Unknown (unannotated) target receiving a known, dimensioned value silently
-            // discards its unit information — flag it. Dimensionless values have nothing
-            // to lose, so `float aspect = width / height;` is fine.
+            // An unannotated target would drop the unit of a dimensioned value. A dimensionless value has
+            // no unit to lose, so `float aspect = width / height;` is allowed.
             return value.IsKnown && !value.Dimensions!.IsScalar();
         }
 
+        /// <summary>
+        ///     Decides whether <paramref name="actual" /> can be passed to a parameter declared as
+        ///     <paramref name="expected" />.
+        /// </summary>
+        /// <remarks>
+        ///     This is stricter than <see cref="IsIncompatibleAssignment" />. An unannotated argument is an error
+        ///     here, because a raw value at a call site is more likely a missing annotation than a deliberate claim.
+        /// </remarks>
         private static bool IsIncompatibleArgument(QuantityValue expected, QuantityValue actual)
         {
-            // Parameter has no declared dimension — it accepts anything, known or not.
-            // This is what lets Length flow into MathF.Max(float, float) or
-            // IsFinitePositive(float) without any opt-out mechanism.
+            // An unannotated parameter accepts anything, so a Metre can go into MathF.Max(float, float).
             if (!expected.IsKnown)
                 return false;
 
-            // Parameter requires a specific dimension. A literal constant (e.g. `0f`)
-            // is exempt — it carries no conflicting dimension of its own. A declared or
-            // computed dimensionless value is not a literal and is checked like any other.
+            // A literal such as `0f` has no dimension of its own. A dimensionless alias or a computed
+            // dimensionless value is a known quantity, so it is checked like any other.
             if (actual.IsLiteralScalar)
                 return false;
 
-            // Anything else — an unannotated scalar, or a known-but-different dimension —
-            // does not satisfy a parameter that requires a specific quantity.
             return !actual.IsKnown || !expected.Dimensions!.Equals(actual.Dimensions);
         }
 
+        /// <summary>
+        ///     Combines the branches of a sum, difference, conditional, or coalesce.
+        /// </summary>
+        /// <remarks>
+        ///     A literal adopts the quantity of the other side. Unknown or mismatched sides give unknown.
+        /// </remarks>
         private static QuantityValue Merge(QuantityValue left, QuantityValue right)
         {
             if (left.IsLiteralScalar)
@@ -637,6 +664,12 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
         }
     }
 
+    /// <summary>
+    ///     The state of an expression: known (has a dimension), literal, or unknown (unannotated).
+    /// </summary>
+    /// <remarks>
+    ///     The default value is unknown. A literal has no dimension and adopts the dimension of whatever it meets.
+    /// </remarks>
     private readonly struct QuantityValue
     {
         private QuantityValue(DimensionVector? dimensions, bool isLiteralScalar = false)
@@ -656,6 +689,9 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
             return new QuantityValue(definition.Dimensions);
         }
 
+        /// <summary>
+        ///     Adds the exponents of both operands. A literal operand leaves the other operand unchanged.
+        /// </summary>
         internal QuantityValue Multiply(QuantityValue other)
         {
             if (IsLiteralScalar)
@@ -670,6 +706,9 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
             return new QuantityValue(Dimensions!.Multiply(other.Dimensions!));
         }
 
+        /// <summary>
+        ///     Subtracts the exponents of <paramref name="other" />. A literal numerator inverts the denominator.
+        /// </summary>
         internal QuantityValue Divide(QuantityValue other)
         {
             if (IsLiteralScalar)

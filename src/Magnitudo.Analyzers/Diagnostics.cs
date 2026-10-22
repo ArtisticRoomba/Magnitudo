@@ -2,6 +2,10 @@ using Microsoft.CodeAnalysis;
 
 namespace Magnitudo.Analyzers;
 
+/// <summary>
+///     The descriptors for QNT000 to QNT004. Each new descriptor needs an entry in
+///     <c>AnalyzerReleases.Unshipped.md</c>.
+/// </summary>
 internal static class Diagnostics
 {
     private const string Category = "DimensionalAnalysis";

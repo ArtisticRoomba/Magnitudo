@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Manage the Magnitudo version and annotated release tags."""
+"""Read, change, and verify the Magnitudo version in Version.props, and create release tags."""
 
 from __future__ import annotations
 
@@ -30,11 +30,13 @@ MAX_ASSEMBLY_COMPONENT = 65534
 
 
 class VersionError(RuntimeError):
-    """A user-facing version-management failure."""
+    """Raised for a failure the command line reports as an error message."""
 
 
 @dataclass(frozen=True)
 class SemanticVersion:
+    """A SemVer 2.0.0 version with the .NET assembly-version limit applied to each numeric component."""
+
     major: int
     minor: int
     patch: int
@@ -43,6 +45,7 @@ class SemanticVersion:
 
     @classmethod
     def parse(cls, value: str) -> "SemanticVersion":
+        """Parse `value`. Raise VersionError when it is not SemVer or a component exceeds 65534."""
         match = SEMVER_PATTERN.fullmatch(value)
         if match is None:
             raise VersionError(f"'{value}' is not a valid SemVer 2.0.0 version")
@@ -67,6 +70,11 @@ class SemanticVersion:
         return version
 
     def bump(self, kind: str, prerelease: str | None = None) -> "SemanticVersion":
+        """Return the next version.
+
+        A major, minor, or patch bump resets lower components and sets the prerelease to `prerelease`.
+        A prerelease bump increments a trailing number, or appends `.1`, and rejects `prerelease`.
+        """
         if prerelease is not None:
             SemanticVersion.parse(f"0.0.0-{prerelease}")
         if kind == "prerelease":
@@ -89,6 +97,7 @@ class SemanticVersion:
         raise VersionError("bump kind must be major, minor, patch, or prerelease")
 
     def promote(self) -> "SemanticVersion":
+        """Return the version without prerelease and build suffixes."""
         return SemanticVersion(self.major, self.minor, self.patch)
 
     def __str__(self) -> str:
@@ -101,6 +110,7 @@ class SemanticVersion:
 
 
 def repository_root(explicit_root: str | None = None) -> Path:
+    """Return `explicit_root`, or the parent of this script's folder, if it contains Version.props."""
     root = Path(explicit_root).resolve() if explicit_root else Path(__file__).resolve().parent.parent
     if (root / VERSION_FILE).is_file():
         return root
@@ -108,6 +118,7 @@ def repository_root(explicit_root: str | None = None) -> Path:
 
 
 def read_xml_value(text: str, name: str, path: Path) -> str:
+    """Return the text of the single `<name>` element. Raise VersionError unless exactly one exists."""
     matches = list(XML_VALUES[name].finditer(text))
     if len(matches) != 1:
         raise VersionError(f"expected exactly one <{name}> element in '{path}'")
@@ -115,10 +126,12 @@ def read_xml_value(text: str, name: str, path: Path) -> str:
 
 
 def read_version(path: Path) -> SemanticVersion:
+    """Read the `<Version>` element of the props file at `path`."""
     return SemanticVersion.parse(read_xml_value(path.read_text(encoding="utf-8-sig"), "Version", path))
 
 
 def replace_xml_value(text: str, name: str, value: str, path: Path) -> str:
+    """Return `text` with the content of the single `<name>` element replaced by `value`."""
     matches = list(XML_VALUES[name].finditer(text))
     if len(matches) != 1:
         raise VersionError(f"expected exactly one <{name}> element in '{path}'")
@@ -127,6 +140,11 @@ def replace_xml_value(text: str, name: str, value: str, path: Path) -> str:
 
 
 def write_version(path: Path, version: SemanticVersion) -> None:
+    """Write `version`, and the assembly and file versions derived from it, to the props file.
+
+    The assembly version is `major.0.0.0`. The file version is `major.minor.patch.0`. The write keeps the
+    existing byte order mark and line endings.
+    """
     raw = path.read_bytes()
     has_bom = raw.startswith(b"\xef\xbb\xbf")
     text = raw.decode("utf-8-sig")
@@ -154,6 +172,7 @@ def run_git(root: Path, *arguments: str, check: bool = True) -> subprocess.Compl
 
 
 def verify(root: Path) -> SemanticVersion:
+    """Check that the version files agree, the working tree is clean, and HEAD has the same version."""
     path = root / VERSION_FILE
     version = read_version(path)
     text = path.read_text(encoding="utf-8-sig")
@@ -175,6 +194,7 @@ def verify(root: Path) -> SemanticVersion:
 
 
 def create_tag(root: Path) -> str:
+    """Verify the repository, then create the local annotated tag `vX.Y.Z`. Do not push it."""
     version = verify(root)
     tag = f"v{version}"
     exists = run_git(root, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}", check=False)
@@ -185,6 +205,7 @@ def create_tag(root: Path) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", help="Magnitudo repository root (defaults to the script's parent)")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -203,6 +224,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(arguments: list[str] | None = None) -> int:
+    """Run a command. Return 0 on success, or 2 after printing an error to stderr."""
     args = build_parser().parse_args(arguments)
     try:
         root = repository_root(args.repo)

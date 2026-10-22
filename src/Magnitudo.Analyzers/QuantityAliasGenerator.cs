@@ -5,7 +5,13 @@ using Microsoft.CodeAnalysis.Text;
 
 namespace Magnitudo.Analyzers;
 
-/// <summary>Generates zero-cost global aliases from <c>*.magnitudo</c> additional files.</summary>
+/// <summary>
+///     Emits a <c>global using</c> alias for each quantity in the catalog, plus conversion methods.
+/// </summary>
+/// <remarks>
+///     Each alias names the quantity's storage type, so it erases to a primitive at runtime. The generator sorts
+///     aliases and conversions by name so the output is the same for the same catalog.
+/// </remarks>
 [Generator(LanguageNames.CSharp)]
 public sealed class QuantityAliasGenerator : IIncrementalGenerator
 {
@@ -72,6 +78,12 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
             });
     }
 
+    /// <summary>
+    ///     Formats <paramref name="value" /> as a C# literal that matches <paramref name="storageType" />.
+    /// </summary>
+    /// <remarks>
+    ///     Any storage type that is not float or decimal gets a <c>d</c> suffix.
+    /// </remarks>
     private static string GetLiteral(double value, string storageType)
     {
         string text = value.ToString("R", CultureInfo.InvariantCulture);
