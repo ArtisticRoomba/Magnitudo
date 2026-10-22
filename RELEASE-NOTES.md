@@ -26,6 +26,12 @@ Do not edit released sections by hand pretty please.
 
 *None yet*
 
+## 0.3.0-beta.2
+
+### Other
+
+- The package metadata lists ArtisticRoomba and Magnitudo contributors as authors.
+
 ## 0.3.0-beta.1
 
 ### Breaking changes
