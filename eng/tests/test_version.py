@@ -13,6 +13,22 @@ sys.modules[SPEC.name] = version_tool
 SPEC.loader.exec_module(version_tool)
 
 
+PROPS = """<Project>\n    <PropertyGroup>\n        <Version>{0}</Version>\n        <AssemblyVersion>0.0.0.0</AssemblyVersion>\n        <FileVersion>0.1.0.0</FileVersion>\n    </PropertyGroup>\n</Project>\n"""
+INSTALL_DOC = (
+    "# Install\r\n\r\n```xml\r\n"
+    '<PackageReference Include="Magnitudo" Version="{0}"/>\r\n'
+    '<PackageReference Include="Magnitudo.Analyzers" Version="{0}" PrivateAssets="all"/>\r\n'
+    '<PackageReference Include="Other.Package" Version="{0}"/>\r\n'
+    "```\r\n\r\nVersion=\"{0}\" outside a reference stays.\r\n"
+)
+
+
+def write_install_doc(root: Path, version: str, contents: str = INSTALL_DOC) -> None:
+    path = root / version_tool.SYNCED_DOCS[0]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(contents.format(version).encode("utf-8"))
+
+
 class SemanticVersionTests(unittest.TestCase):
     def test_accepts_semver_2_versions(self) -> None:
         values = (
@@ -87,6 +103,7 @@ class VersionFileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / version_tool.VERSION_FILE).write_text(contents, encoding="utf-8")
+            write_install_doc(root, "0.1.0-alpha.1")
 
             self.assertEqual(0, version_tool.main(["--repo", str(root), "bump", "prerelease"]))
             updated = (root / version_tool.VERSION_FILE).read_text(encoding="utf-8")
@@ -95,12 +112,85 @@ class VersionFileTests(unittest.TestCase):
         self.assertIn("<FileVersion>0.1.0.0</FileVersion>", updated)
 
 
+class InstallDocTests(unittest.TestCase):
+    def create_root(self, directory: str, props_version: str = "0.1.0-alpha.1", doc_version: str = "0.1.0-alpha.1") -> Path:
+        root = Path(directory)
+        (root / version_tool.VERSION_FILE).write_text(PROPS.format(props_version), encoding="utf-8")
+        write_install_doc(root, doc_version)
+        return root
+
+    def read_doc(self, root: Path) -> bytes:
+        return (root / version_tool.SYNCED_DOCS[0]).read_bytes()
+
+    def expected_doc(self, version: str) -> bytes:
+        expected = INSTALL_DOC.format("OLD")
+        expected = expected.replace(
+            'Include="Magnitudo" Version="OLD"', f'Include="Magnitudo" Version="{version}"'
+        ).replace('Include="Magnitudo.Analyzers" Version="OLD"', f'Include="Magnitudo.Analyzers" Version="{version}"')
+        return expected.encode("utf-8")
+
+    def test_set_updates_both_references_and_leaves_the_rest_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.create_root(directory)
+            self.assertEqual(0, version_tool.main(["--repo", str(root), "set", "0.3.0-beta.1"]))
+            updated = self.read_doc(root)
+
+        self.assertEqual(self.expected_doc("0.3.0-beta.1").replace(b"OLD", b"0.1.0-alpha.1"), updated)
+
+    def test_bump_updates_install_doc(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.create_root(directory)
+            self.assertEqual(0, version_tool.main(["--repo", str(root), "bump", "minor"]))
+            updated = self.read_doc(root)
+
+        self.assertEqual(self.expected_doc("0.2.0").replace(b"OLD", b"0.1.0-alpha.1"), updated)
+
+    def test_promote_updates_install_doc(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.create_root(directory)
+            self.assertEqual(0, version_tool.main(["--repo", str(root), "promote"]))
+            updated = self.read_doc(root)
+
+        self.assertEqual(self.expected_doc("0.1.0").replace(b"OLD", b"0.1.0-alpha.1"), updated)
+
+    def test_missing_install_doc_fails_before_writing_version_props(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.create_root(directory)
+            (root / version_tool.SYNCED_DOCS[0]).unlink()
+            self.assertEqual(2, version_tool.main(["--repo", str(root), "set", "0.2.0"]))
+            props = (root / version_tool.VERSION_FILE).read_text(encoding="utf-8")
+
+        self.assertEqual(PROPS.format("0.1.0-alpha.1"), props)
+
+    def test_install_doc_without_reference_fails_before_writing_version_props(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.create_root(directory)
+            write_install_doc(root, "0.1.0-alpha.1", "# Install\n\n<PackageReference Include=\"Other\" Version=\"{0}\"/>\n")
+            with self.assertRaisesRegex(version_tool.VersionError, "no PackageReference"):
+                version_tool.write_versions(root, version_tool.SemanticVersion.parse("0.2.0"))
+            props = (root / version_tool.VERSION_FILE).read_text(encoding="utf-8")
+
+        self.assertEqual(PROPS.format("0.1.0-alpha.1"), props)
+
+    def test_verify_docs_accepts_matching_versions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.create_root(directory)
+            version_tool.verify_docs(root, version_tool.SemanticVersion.parse("0.1.0-alpha.1"))
+
+    def test_verify_rejects_install_doc_mismatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.create_root(directory, doc_version="0.0.9")
+            with self.assertRaisesRegex(version_tool.VersionError, r"install\.md.*0\.0\.9.*0\.1\.0-alpha\.1"):
+                version_tool.verify(root)
+
+
 class GitReleaseTests(unittest.TestCase):
     VERSION_FILE = """<Project>\n    <PropertyGroup>\n        <Version>0.1.0-alpha.1</Version>\n        <PackageVersion>$(Version)</PackageVersion>\n        <AssemblyVersion>0.0.0.0</AssemblyVersion>\n        <FileVersion>0.1.0.0</FileVersion>\n    </PropertyGroup>\n</Project>\n"""
 
     def create_repository(self, directory: str) -> Path:
         root = Path(directory)
         (root / version_tool.VERSION_FILE).write_text(self.VERSION_FILE, encoding="utf-8")
+        write_install_doc(root, "0.1.0-alpha.1")
         subprocess.run(["git", "init", "--initial-branch=master"], cwd=root, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.name", "Magnitudo Tests"], cwd=root, check=True)
         subprocess.run(["git", "config", "user.email", "tests@example.invalid"], cwd=root, check=True)

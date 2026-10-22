@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 VERSION_FILE = Path("Version.props")
+# Docs that quote the package version. Each file must contain a PackageReference to a Magnitudo package.
+SYNCED_DOCS = (Path("docs/install.md"),)
+PACKAGE_NAMES = ("Magnitudo", "Magnitudo.Analyzers")
 
 PRERELEASE_IDENTIFIER = r"(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
 BUILD_IDENTIFIER = r"[0-9A-Za-z-]+"
@@ -26,6 +29,9 @@ XML_VALUES = {
     "AssemblyVersion": re.compile(r"(<AssemblyVersion>)(?P<value>[^<]*)(</AssemblyVersion>)"),
     "FileVersion": re.compile(r"(<FileVersion>)(?P<value>[^<]*)(</FileVersion>)"),
 }
+PACKAGE_REFERENCE = re.compile(r"<PackageReference\b[^>\r\n]*>")
+PACKAGE_INCLUDE = re.compile(r'\bInclude="(?P<name>[^"]*)"')
+PACKAGE_VERSION = re.compile(r'(\bVersion=")(?P<value>[^"]*)(")')
 MAX_ASSEMBLY_COMPONENT = 65534
 
 
@@ -160,6 +166,73 @@ def write_version(path: Path, version: SemanticVersion) -> None:
     path.write_text(text, encoding=encoding, newline="")
 
 
+def package_reference_versions(text: str) -> list[tuple[str, str]]:
+    """Return the (package, version) pair of each Magnitudo PackageReference in `text`."""
+    found: list[tuple[str, str]] = []
+    for tag in PACKAGE_REFERENCE.finditer(text):
+        include = PACKAGE_INCLUDE.search(tag[0])
+        version = PACKAGE_VERSION.search(tag[0])
+        if include and version and include["name"] in PACKAGE_NAMES:
+            found.append((include["name"], version["value"]))
+    return found
+
+
+def missing_reference_error(path: Path) -> VersionError:
+    return VersionError(f"'{path}' has no PackageReference with a version for {' or '.join(PACKAGE_NAMES)}")
+
+
+def sync_package_references(text: str, version: SemanticVersion, path: Path) -> str:
+    """Return `text` with the version of each Magnitudo PackageReference set to `version`.
+
+    Raise VersionError when `text` has no such reference. All other bytes stay as they are.
+    """
+    count = 0
+
+    def replace_tag(tag: re.Match[str]) -> str:
+        nonlocal count
+        include = PACKAGE_INCLUDE.search(tag[0])
+        if include is None or include["name"] not in PACKAGE_NAMES or PACKAGE_VERSION.search(tag[0]) is None:
+            return tag[0]
+        count += 1
+        return PACKAGE_VERSION.sub(lambda m: m[1] + str(version) + m[3], tag[0], count=1)
+
+    updated = PACKAGE_REFERENCE.sub(replace_tag, text)
+    if count == 0:
+        raise missing_reference_error(path)
+    return updated
+
+
+def read_doc(root: Path, doc: Path) -> str:
+    """Return the text of `doc` with its line endings unchanged. Raise VersionError when it is missing."""
+    path = root / doc
+    if not path.is_file():
+        raise VersionError(f"synced doc '{path}' does not exist")
+    return path.read_bytes().decode("utf-8")
+
+
+def write_versions(root: Path, version: SemanticVersion) -> None:
+    """Write `version` to Version.props and to each synced doc.
+
+    The docs are checked first, so a missing doc or reference leaves Version.props unchanged.
+    """
+    updated = {doc: sync_package_references(read_doc(root, doc), version, root / doc) for doc in SYNCED_DOCS}
+    write_version(root / VERSION_FILE, version)
+    for doc, text in updated.items():
+        (root / doc).write_bytes(text.encode("utf-8"))
+
+
+def verify_docs(root: Path, version: SemanticVersion) -> None:
+    """Raise VersionError when a synced doc quotes a version other than `version`."""
+    for doc in SYNCED_DOCS:
+        path = root / doc
+        references = package_reference_versions(read_doc(root, doc))
+        if not references:
+            raise missing_reference_error(path)
+        for name, quoted in references:
+            if quoted != str(version):
+                raise VersionError(f"{path}: {name} is {quoted} but {VERSION_FILE} is {version}")
+
+
 def run_git(root: Path, *arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["git", *arguments],
@@ -172,7 +245,10 @@ def run_git(root: Path, *arguments: str, check: bool = True) -> subprocess.Compl
 
 
 def verify(root: Path) -> SemanticVersion:
-    """Check that the version files agree, the working tree is clean, and HEAD has the same version."""
+    """Check that the version files and synced docs agree.
+
+    Also check that the working tree is clean and HEAD has the same version.
+    """
     path = root / VERSION_FILE
     version = read_version(path)
     text = path.read_text(encoding="utf-8-sig")
@@ -182,6 +258,7 @@ def verify(root: Path) -> SemanticVersion:
         raise VersionError(f"{path}: AssemblyVersion must be {expected_assembly}")
     if read_xml_value(text, "FileVersion", path) != expected_file:
         raise VersionError(f"{path}: FileVersion must be {expected_file}")
+    verify_docs(root, version)
 
     status = run_git(root, "status", "--porcelain").stdout
     if status:
@@ -211,7 +288,7 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("get", help="print the current version")
     commands.add_parser("promote", help="drop the prerelease suffix")
-    commands.add_parser("verify", help="check version files and that HEAD is clean and committed")
+    commands.add_parser("verify", help="check version files, synced docs, and that HEAD is clean and committed")
     commands.add_parser("tag", help="create the annotated vX.Y.Z tag locally")
 
     set_parser = commands.add_parser("set", help="set an exact version")
@@ -233,15 +310,15 @@ def main(arguments: list[str] | None = None) -> int:
             print(read_version(path))
         elif args.command == "set":
             version = SemanticVersion.parse(args.version)
-            write_version(path, version)
+            write_versions(root, version)
             print(version)
         elif args.command == "bump":
             version = read_version(path).bump(args.kind, args.prerelease)
-            write_version(path, version)
+            write_versions(root, version)
             print(version)
         elif args.command == "promote":
             version = read_version(path).promote()
-            write_version(path, version)
+            write_versions(root, version)
             print(version)
         elif args.command == "verify":
             print(f"{verify(root)} verified")
