@@ -1669,6 +1669,105 @@ public sealed class DimensionalAnalysisAnalyzerTests
     }
 
     [Test]
+    public async Task PrimaryConstructorParameterInFieldInitializerIsChecked()
+    {
+        const string source = """
+                              internal sealed class Gas(Pascal pressure)
+                              {
+                                  private readonly Kelvin _t = pressure;
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        var diagnostic = diagnostics.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnostic.Id, Is.EqualTo("QNT002"));
+            Assert.That(SpanText(diagnostic), Is.EqualTo("pressure"));
+        });
+    }
+
+    [Test]
+    public async Task MatchingPrimaryConstructorParameterInFieldInitializerHasNoDiagnostics()
+    {
+        const string source = """
+                              internal sealed class Gas(Pascal pressure)
+                              {
+                                  private readonly Pascal _p = pressure;
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task PrimaryConstructorParameterInPropertyInitializerIsChecked()
+    {
+        const string source = """
+                              internal sealed class Gas(Pascal pressure)
+                              {
+                                  internal Kelvin T { get; } = pressure;
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        var diagnostic = diagnostics.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnostic.Id, Is.EqualTo("QNT002"));
+            Assert.That(SpanText(diagnostic), Is.EqualTo("pressure"));
+        });
+    }
+
+    [Test]
+    public async Task PositionalRecordParameterCarriesQuantityIntoPropertyInitializer()
+    {
+        // The generated property's only declaring syntax is the ParameterSyntax, so GetSyntaxQuantity
+        // reads the alias from the parameter type and the property keeps its quantity.
+        const string source = """
+                              internal sealed record Reading(Pascal Pressure)
+                              {
+                                  internal Kelvin T { get; } = Pressure;
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        var diagnostic = diagnostics.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnostic.Id, Is.EqualTo("QNT002"));
+            Assert.That(SpanText(diagnostic), Is.EqualTo("Pressure"));
+        });
+    }
+
+    [Test]
+    public async Task ConstInitializerWithQuantityMismatchIsQnt002()
+    {
+        const string source = """
+                              internal static class Physics
+                              {
+                                  private const Pascal P = 1f;
+                                  private const Kelvin K = P;
+                                  private const Kelvin K2 = K;
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        var diagnostic = diagnostics.Single();
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnostic.Id, Is.EqualTo("QNT002"));
+            Assert.That(SpanText(diagnostic), Is.EqualTo("P"));
+        });
+    }
+
+    [Test]
     public async Task ArrayElementAssignmentIsChecked()
     {
         const string source = """
