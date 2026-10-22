@@ -84,6 +84,9 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
     /// <remarks>
     ///     Before C# 12, a <c>using</c> alias cannot name a keyword type such as <c>float</c>. The generator maps each
     ///     keyword to its <c>global::System</c> type so the aliases compile on C# 10 and C# 11.
+    ///     The generator leaves <c>nint</c> and <c>nuint</c> as keywords. They are contextual names, so an alias to
+    ///     them already compiles on C# 10. <see cref="IntPtr" /> has the arithmetic
+    ///     operators of <c>nint</c> only on C# 11 with .NET 7 or later, so mapping them would break arithmetic.
     /// </remarks>
     private static string GetAliasTarget(string storageType)
     {
@@ -98,8 +101,6 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
             "uint" => "global::System.UInt32",
             "long" => "global::System.Int64",
             "ulong" => "global::System.UInt64",
-            "nint" => "global::System.IntPtr",
-            "nuint" => "global::System.UIntPtr",
             "float" => "global::System.Single",
             "double" => "global::System.Double",
             "decimal" => "global::System.Decimal",

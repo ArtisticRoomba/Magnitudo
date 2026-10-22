@@ -511,6 +511,27 @@ public sealed class DimensionalAnalysisAnalyzerTests
             Is.Empty);
     }
 
+    [TestCase(LanguageVersion.CSharp10)]
+    [TestCase(LanguageVersion.CSharp12)]
+    public void NativeIntegerStorageKeepsKeywordAlias(LanguageVersion languageVersion)
+    {
+        const string source = "internal static class C { internal static Handle Next(Handle h) => h + 1; }";
+        const string catalog = "handle | Handle | nint | length=1";
+
+        var compilation = GenerateAliases(
+            CreateCompilation(source, languageVersion: languageVersion),
+            catalog,
+            out ImmutableArray<Diagnostic> generatorDiagnostics);
+
+        Assert.That(generatorDiagnostics, Is.Empty);
+        Assert.That(
+            compilation.SyntaxTrees.Select(tree => tree.ToString()),
+            Has.Some.Contains("global using Handle = nint;"));
+        Assert.That(
+            compilation.GetDiagnostics().Where(diagnostic => diagnostic.Severity != DiagnosticSeverity.Hidden),
+            Is.Empty);
+    }
+
     [Test]
     public void QuantityIdMayStartWithConvert()
     {
