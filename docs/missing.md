@@ -18,6 +18,7 @@ reasons a mistake gets through.
 - Tuples, deconstruction, and `foreach` variables, even when the written type is an alias.
 - Whole arrays and collections. Only elements carry a quantity. `Metre[] xs = pascals;` passes, and so does a
   `Pascal[]` passed to a `Metre[]` parameter.
+- `params` arguments. A `params Metre[]` parameter is an array, so the analyzer does not check the values passed to it.
 - `yield return` values. The analyzer does not compare them with the iterator's element type.
 - Lambdas without a declared return quantity. `() => pressure` assigned to a `Func<Kelvin>` passes.
 - String concatenation. `"p=" + pressure + " T=" + temperature` is not a sum.

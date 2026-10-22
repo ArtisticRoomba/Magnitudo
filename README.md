@@ -55,7 +55,7 @@ Then add a `.magnitudo` catalog as an `AdditionalFiles` item. [Getting started](
 Bug reports and pull requests are welcome on GitHub. Build and test with:
 
 ```bash
-dotnet build Magnitudo.slnx -c Release -warnaserror
+dotnet build Magnitudo.slnx -c Release
 dotnet test Magnitudo.slnx -c Release
 ```
 

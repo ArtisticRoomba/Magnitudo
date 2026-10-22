@@ -60,7 +60,9 @@ A skipped catalog line removes its alias. Every use of that alias then fails as 
 ## Aliases do not cross assemblies
 
 A `Pascal` parameter in a library is a plain `float` to its callers. The calling project's analyzer sees an
-unannotated parameter, which accepts anything. Put `[Quantity]` or `[ElementQuantity]` on public API.
+unannotated parameter, which accepts anything. An alias-typed field fails the other way. Assigning a `Pascal` to a
+library's `Kelvin` field reports [QNT002](diagnostics.md#qnt002) against `unannotated scalar`. Put `[Quantity]` or
+`[ElementQuantity]` on public API.
 
 ## Downgraded rules fail again under `-warnaserror`
 
