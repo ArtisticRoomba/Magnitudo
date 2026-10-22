@@ -1,74 +1,67 @@
 # Magnitudo
 
-Magnitudo is a .NET library for representing physical quantities, dimensions, and units, with dimensional consistency
-checked at compile time.
-
-Quantities are described in a catalog file, a source generator turns each one into a
-`global using` alias (`Kelvin`, `Pascal`, and so on), and an analyzer fails the build when an expression mixes
-dimensions that don't fit, like adding a pressure to a temperature.
-
-Magnitudo originated as the dimensional-analysis system used by the [Numos](https://github.com/ArtisticRoomba/Numos)
-atmospherics simulation library (`Numos.Units`) and was later separated into a general-purpose library.
-
-`Numos.Units` itself was born out of a need for a dimensional analysis tool that
-tracked quantities throughout a solution with zero runtime overhead or type wrapping.
-
-## Install
-
-```bash
-dotnet add package Magnitudo --prerelease
-dotnet add package Magnitudo.Analyzers --prerelease
-```
-
-`Magnitudo` holds the `[Quantity]` and `[ElementQuantity]` attributes. `Magnitudo.Analyzers` is a development
-dependency, so reference it with `PrivateAssets="all"` and it won't flow to your consumers:
-
-```xml
-<PackageReference Include="Magnitudo" Version="0.2.0-alpha.1"/>
-<PackageReference Include="Magnitudo.Analyzers" Version="0.2.0-alpha.1" PrivateAssets="all"/>
-```
-
-## Add a catalog
-
-Put your quantities in a `*.magnitudo` file and include it as an `AdditionalFiles` item:
-
-```xml
-<ItemGroup>
-    <AdditionalFiles Include="MyProject.magnitudo"/>
-</ItemGroup>
-```
-
-```text
-temperature | Kelvin | global::System.Single | temperature=1
-pressure    | Pascal | global::System.Single | mass=1,length=-1,time=-2
-```
-
-With that catalog, this fails to build:
+Magnitudo is compile-time dimensional analysis for C#. You list your quantities in a catalog file. A source generator
+turns each one into a `global using` alias, and an analyzer fails the build when an expression mixes dimensions.
 
 ```csharp
 static float Total(Pascal pressure, Kelvin temperature) => pressure + temperature;
 // error QNT001: Operator '+' cannot combine 'length^-1 mass^1 time^-2' and 'temperature'
 ```
 
-The docs, in reading order:
+> [!WARNING]
+> Magnitudo is young and under active development. Packages use [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
+> Until the public API settles, releases stay in the `0.x` series and ship as prereleases.
 
-- [Dimensional analysis](docs/dimensional_analysis.md): the model and what it costs at runtime.
-- [The catalog](docs/catalog.md): the `.magnitudo` format, unit conversions, and catalog errors.
-- [How the analyzer reasons](docs/inference.md): where quantities come from, what each position accepts, and what isn't
-  checked.
-- [Diagnostics](docs/diagnostics.md): `QNT000` to `QNT004`, with failing examples and fixes.
-- [Versioning and releasing](docs/versioning.md).
+## Strengths
 
-## Build, test, pack
+- Zero runtime cost: a `Kelvin` is a `float` in the compiled assembly
+- Arrays stay primitive arrays, so SIMD, spans, and interop work as usual
+- Native AOT and trimming are unaffected
+- Dimensions are integer exponent vectors over any base names you choose, not a fixed SI set
+- Several storage types per quantity (`Kelvin` and `Kelvin64`)
+- Generated, checked conversions to and from external units such as Celsius
+- Quantities survive across assemblies through `[Quantity]` and `[ElementQuantity]`
+- Mismatches are ordinary Roslyn errors, controlled with `.editorconfig` like any other
+
+## Weaknesses
+
+- The C# compiler cannot tell `Kelvin` from `Pascal`, so checks cover only annotated code
+- Quantities with the same exponents are interchangeable, so torque and energy look identical
+- `Math.Sqrt`, `Math.Pow`, and most other functions return an unknown quantity
+- Tuples, `foreach` variables, and whole-collection assignments are not checked
+- No fractional exponents
+
+## Installation
+
+```bash
+dotnet add package Magnitudo --prerelease
+dotnet add package Magnitudo.Analyzers --prerelease
+```
+
+Then add a `.magnitudo` catalog as an `AdditionalFiles` item. [Getting started](docs/install.md) walks through it.
+
+## Recommended reading
+
+- [Getting started](docs/install.md)
+- [How Magnitudo works](docs/how-it-works.md)
+- [The catalog format](docs/catalog.md)
+- [Diagnostics](docs/diagnostics.md)
+- [Gotchas](docs/gotchas.md)
+- [What the analyzer does not check](docs/missing.md)
+- [Versioning and releasing](docs/versioning.md)
+
+## Bug reports and contributions
+
+Bug reports and pull requests are welcome on GitHub. Build and test with:
 
 ```bash
 dotnet build Magnitudo.slnx -c Release -warnaserror
 dotnet test Magnitudo.slnx -c Release
-dotnet pack Magnitudo.slnx -c Release
 ```
 
-Packages land in `artifacts/packages`. Versions for both packages come from `Version.props`.
+## Copyright, credits, and license
 
-## License
+Magnitudo is licensed under the MIT license. See `LICENSE.TXT` for more info.
 
-Magnitudo is licensed under the MIT license. See LICENSE.TXT for more info.
+Magnitudo began as `Numos.Units`, the dimensional analysis layer of the [Numos](https://github.com/ArtisticRoomba/Numos)
+atmospherics library. Numos needed to track quantities through a solution without wrapper types or runtime cost.

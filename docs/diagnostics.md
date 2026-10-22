@@ -1,16 +1,18 @@
 # Diagnostics
 
-Magnitudo reports five diagnostics. All are errors, in the category `DimensionalAnalysis`, and all are on by default.
+Magnitudo reports five diagnostics. All are errors in the `DimensionalAnalysis` category, and all are on by default.
+Messages print quantities as exponent vectors, as described in
+[Gotchas](gotchas.md#messages-show-exponents-not-alias-names).
 
-| Id | Title | Reported when |
+| ID | Title | Reported when |
 | --- | --- | --- |
-| [`QNT000`](#qnt000) | Invalid units catalog | A `.magnitudo` file can't be parsed or defines an invalid quantity or conversion. |
-| [`QNT001`](#qnt001) | Incompatible quantities | `+`, `-` or a comparison combines two operands with different dimensions. |
-| [`QNT002`](#qnt002) | Incompatible quantity assignment | A value is assigned to a target with a different quantity. |
-| [`QNT003`](#qnt003) | Incompatible argument quantity | An argument's quantity doesn't match the parameter's. |
-| [`QNT004`](#qnt004) | Incompatible return quantity | A returned value's quantity doesn't match the method's. |
+| [QNT000](#qnt000) | Invalid units catalog | A `.magnitudo` line cannot be parsed or is invalid. |
+| [QNT001](#qnt001) | Incompatible quantities | `+`, `-`, or a comparison has operands with different dimensions. |
+| [QNT002](#qnt002) | Incompatible quantity assignment | An assigned value does not match the target's quantity. |
+| [QNT003](#qnt003) | Incompatible argument quantity | An argument does not match the parameter's quantity. |
+| [QNT004](#qnt004) | Incompatible return quantity | A returned value does not match the declared return quantity. |
 
-The examples below use this catalog:
+The examples use this catalog:
 
 ```text
 length      | Metre          | global::System.Single | length=1
@@ -23,464 +25,140 @@ pressure    | Pascal         | global::System.Single | mass=1,length=-1,time=-2
 ratio       | Ratio          | global::System.Single | 1
 ```
 
-## Reading a message
+## QNT000
 
-Quantities in messages are printed as their exponent vectors, not their alias names. The analyzer compares
-dimensions, so the message shows the dimension it computed.
+`Invalid units catalog: {0}`
 
-| Quantity | Printed as |
-| --- | --- |
-| `Kelvin` | `temperature` |
-| `Metre` | `length` |
-| `Pascal` | `length^-1 mass^1 time^-2` |
-| `Newton` | `length^1 mass^1 time^-2` |
-| `Ratio` | `dimensionless` |
-| a numeric literal | `numeric literal` |
-| an unannotated `float` | `unannotated scalar` |
+The analyzer reports this on the offending line of a `.magnitudo` file. It skips the line and loads the rest.
+[Catalog errors](catalog.md#catalog-errors) lists every message.
 
-Base dimensions are sorted alphabetically. An exponent of 1 is omitted only when the quantity has a single base
-dimension, so `temperature` has no `^1` but `length^1 time^-1` does. If the printed vector isn't what you expected, the
-quickest check is to work it out by hand: $[\text{Pascal}] = M\,L^{-1}\,T^{-2}$ prints as
-`length^-1 mass^1 time^-2`.
+```text
+Units.magnitudo(4,1): error QNT000: Invalid units catalog: Invalid dimension entry 'length=-1.5'.
+```
 
----
+Exponents are integers. Expect follow-on C# errors wherever the skipped alias appears.
 
 ## QNT001
 
-**Incompatible quantities.** `Operator '{0}' cannot combine '{1}' and '{2}'`
+`Operator '{0}' cannot combine '{1}' and '{2}'`
 
-Reported on a binary expression with `+`, `-`, `==`, `!=`, `<`, `<=`, `>`, or `>=` when both operands are known and
-their dimensions differ. The mathematical rule is $[a] = [b]$ for $a \pm b$ and for any comparison between $a$ and $b$.
-
-### Adding unlike quantities
+The analyzer reports this on `+`, `-`, `==`, `!=`, `<`, `<=`, `>`, or `>=` when both operands are known and their
+dimensions differ.
 
 ```csharp
-internal static float Total(Pascal pressure, Kelvin temperature)
-{
-    return pressure + temperature;
-}
+internal static float Total(Pascal pressure, Kelvin temperature) => pressure + temperature;
 ```
 
 ```text
 error QNT001: Operator '+' cannot combine 'length^-1 mass^1 time^-2' and 'temperature'
 ```
 
-There is no mechanical fix; the expression is wrong. Pressure and temperature are related through the ideal gas law,
-$p = nRT / V$, so a sum of the two usually means a term is missing, or two variables were swapped.
+No mechanical fix exists, because the expression is wrong. A sum of pressure and temperature usually means a missing
+term or two swapped variables.
 
-### Comparing unlike quantities
-
-Comparisons are checked the same way as sums:
-
-```csharp
-internal static bool Reached(Metre distance, Second elapsed)
-{
-    return distance == elapsed;
-}
-```
-
-```text
-error QNT001: Operator '==' cannot combine 'length' and 'time'
-```
-
-A comparison against a literal is fine, since the literal takes the other side's quantity: `distance > 0f`.
-
-### Mixing in a dimensionless value
-
-A `Ratio` isn't a literal. It has no dimensions, but it is a declared quantity, and adding it to a length is as wrong as
-adding a time:
-
-```csharp
-internal static Metre Shift(Metre d, Ratio r) => d + r;
-```
-
-```text
-error QNT001: Operator '+' cannot combine 'length' and 'dimensionless'
-```
-
-Multiplying is allowed: `d * r` is a `length`.
-
-### Elements of arrays and collections
-
-Element access is typed through the container's declared element type, so the same check applies:
-
-```csharp
-private static readonly Metre[] Heights = new Metre[4];
-private static Second _elapsed;
-
-internal static float Bad() => Heights[0] + _elapsed;
-```
-
-```text
-error QNT001: Operator '+' cannot combine 'length' and 'time'
-```
-
----
+A dimensionless `Ratio` is a quantity, so `d + r` fails with `cannot combine 'length' and 'dimensionless'`. Use
+`d * r`. A literal takes the other side's quantity, so `distance > 0f` passes.
 
 ## QNT002
 
-**Incompatible quantity assignment.** `Cannot assign '{0}' to '{1}'`
+`Cannot assign '{0}' to '{1}'`
 
-Reported on an assignment, a variable initializer, or a compound assignment. The message reads *value* first, *target*
-second.
-
-### Assigning to a variable of another quantity
+The analyzer reports this on an assignment, an initializer, or a compound assignment. The message names the value
+first and the target second.
 
 ```csharp
-internal static void Update(Pascal pressure)
-{
-    Kelvin temperature = pressure;
-}
+Kelvin temperature = pressure;
+// error QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'temperature'
+
+Metre v = d / t;
+// error QNT002: Cannot assign 'length^1 time^-1' to 'length'
 ```
 
-```text
-error QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'temperature'
-```
+The second case is a formula that produced a velocity. Change the target to `MetrePerSecond`.
 
-Fields, properties, array elements and list elements behave the same way:
+`*=` and `/=` need a dimensionless right side, because anything else changes the target's dimension:
 
 ```csharp
-internal static Kelvin Current;
-internal static void Set(Pascal pressure) => Current = pressure;
-// Cannot assign 'length^-1 mass^1 time^-2' to 'temperature'
-
-internal static void Fill(Metre[] xs, Second t) => xs[0] = t;
-// Cannot assign 'time' to 'length'
+distance *= time;    // Cannot assign 'length^1 time^1' to 'length'
+distance *= 2f;      // fine
 ```
 
-### Compound assignment
-
-`+=` and `-=` need matching dimensions. `*=` and `/=` need a dimensionless right side, because anything else changes the
-target's own dimension:
+A known quantity cannot go into an unannotated target:
 
 ```csharp
-internal static void Step(Metre distance, Second time)
-{
-    distance += time;     // Cannot assign 'time' to 'length'
-    distance *= time;     // Cannot assign 'length^1 time^1' to 'length'
-    distance *= 2f;       // fine
-}
+float raw = pressure;
+var inferred = pressure;
+// error QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'
 ```
 
-### Losing the unit
-
-A known quantity can't be assigned to an unannotated target. The analyzer treats this as a likely mistake, since the
-value has stopped being checked:
-
-```csharp
-internal static void Report(Pascal pressure)
-{
-    float raw = pressure;
-    var inferred = pressure;
-}
-```
-
-```text
-error QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'
-error QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'
-```
-
-Declare the type with the alias: `Pascal inferred = pressure;`. The converse is allowed. `Kelvin t = 293.15f;` and
-`Kelvin t = someRawFloat;` are both accepted, because that's how raw data gets its unit.
-
-Dimensionless values have no unit to lose, so `float aspect = width / height;` is accepted, and so is a discard such as
-`_ = ReadPressure();`.
-
-### A wrong formula, caught at the declaration
-
-Multiplication and division are never errors on their own, so the mistake in a formula shows up where the result
-meets a typed target. Velocity is distance over time:
-
-$$
-[v] = L\,T^{-1}
-$$
-
-```csharp
-internal static void Move(Metre d, Second t)
-{
-    Metre v = d / t;
-}
-```
-
-```text
-error QNT002: Cannot assign 'length^1 time^-1' to 'length'
-```
-
-Change the target to `MetrePerSecond`.
-
----
+Declare the alias type: `Pascal inferred = pressure;`. Dimensionless values and discards are exempt.
 
 ## QNT003
 
-**Incompatible argument quantity.** `Argument has quantity '{0}', but parameter '{1}' requires '{2}'`
+`Argument has quantity '{0}', but parameter '{1}' requires '{2}'`
 
-Reported on an argument when the corresponding parameter has a quantity and the argument doesn't satisfy it.
-
-### Passing the wrong quantity
+The analyzer reports this when a parameter has a quantity and the argument does not satisfy it.
 
 ```csharp
 internal static void SetTarget(Kelvin value) { }
 
-internal static void Run(Pascal pressure)
-{
-    SetTarget(pressure);
-}
+SetTarget(pressure);
+// error QNT003: Argument has quantity 'length^-1 mass^1 time^-2', but parameter 'value' requires 'temperature'
+
+SetTarget(raw);
+// error QNT003: Argument has quantity 'unannotated scalar', but parameter 'value' requires 'temperature'
 ```
 
-```text
-error QNT003: Argument has quantity 'length^-1 mass^1 time^-2', but parameter 'value' requires 'temperature'
-```
+An unannotated argument fails here even though assignment accepts it.
+[How Magnitudo works](how-it-works.md#what-each-position-accepts) gives the reason. Annotate `raw` at its source, or
+write `Kelvin t = raw;` before the call. Literals such as `SetTarget(0f)` pass.
 
-### Passing an unannotated value
+For `out`, the caller's variable must accept the parameter's quantity. `Read(out p)` with `Pascal p` and an
+`out Kelvin` parameter fails. The message still names the argument first.
 
-A parameter that requires a quantity rejects an unannotated value. This is stricter than assignment, on purpose: at a
-call site, a raw `float` is more likely a missing annotation than a deliberate claim.
+`Abs`, `Clamp`, `Max`, `MaxMagnitude`, `Min`, and `MinMagnitude` on `Math` and `MathF` need matching arguments. The
+first known argument sets the expected quantity:
 
 ```csharp
-internal static void Run(float raw)
-{
-    SetTarget(raw);
-}
+Math.Max(pressure, temperature);
+// error QNT003: Argument has quantity 'temperature', but parameter 'val2' requires 'length^-1 mass^1 time^-2'
 ```
 
-```text
-error QNT003: Argument has quantity 'unannotated scalar', but parameter 'value' requires 'temperature'
-```
-
-Either annotate `raw` at its source, or state the claim with a typed local: `Kelvin t = raw; SetTarget(t);`.
-
-Literals are exempt, so `SetTarget(293.15f)` and `SetTarget(0f)` pass.
-
-### Passing a dimensionless value
-
-A `Ratio`, or a computed dimensionless value such as `d / d`, is a quantity and not a literal:
-
-```csharp
-internal static void Run(Ratio ratio)
-{
-    SetTarget(ratio);
-}
-```
-
-```text
-error QNT003: Argument has quantity 'dimensionless', but parameter 'value' requires 'temperature'
-```
-
-### `ref` and `out`
-
-For `out`, the parameter flows into the argument, so the argument's variable has to accept the parameter's quantity:
-
-```csharp
-internal static void Read(out Kelvin value) => value = 0f;
-
-internal static void Run()
-{
-    Pascal p;
-    Read(out p);
-}
-```
-
-```text
-error QNT003: Argument has quantity 'length^-1 mass^1 time^-2', but parameter 'value' requires 'temperature'
-```
-
-For `ref`, the argument is checked like a plain one: a `ref Kelvin` parameter needs a `temperature` variable, and an
-unannotated `ref` parameter accepts anything. Either way the message names the argument's quantity first and the
-parameter's second.
-
-### `Math.Max` and friends
-
-`Math` and `MathF` methods `Abs`, `Clamp`, `Max`, `MaxMagnitude`, `Min` and `MinMagnitude` return the same quantity as
-their arguments, so the arguments must agree. The first known argument sets the expectation and later ones
-are checked against it:
-
-```csharp
-internal static Pascal Pick(Pascal pressure, Kelvin temperature)
-{
-    return Math.Max(pressure, temperature);
-}
-```
-
-```text
-error QNT003: Argument has quantity 'temperature', but parameter 'val2' requires 'length^-1 mass^1 time^-2'
-```
-
-`Math.Max(pressure, 0f)` is fine. `CopySign(x, y)` returns the quantity of `x` and accepts any `y`, since `y` only
-supplies a sign.
-
-### Across a unit conversion
-
-Generated conversions carry the quantity on their parameter and result, so a conversion can't be pointed at the wrong
-quantity either. With `convert | temperature | Celsius | ...` in the catalog:
-
-```csharp
-using Magnitudo.Generated;
-
-internal static float Show(Pascal pressure)
-{
-    return UnitConversions.ToCelsius(pressure);
-}
-```
-
-```text
-error QNT003: Argument has quantity 'length^-1 mass^1 time^-2', but parameter 'value' requires 'temperature'
-```
-
----
+Generated conversions carry quantities too, so `UnitConversions.ToCelsius(pressure)` fails the same way.
 
 ## QNT004
 
-**Incompatible return quantity.** `Returned expression has quantity '{0}', but the method returns '{1}'`
+`Returned expression has quantity '{0}', but the method returns '{1}'`
 
-Reported on a `return` statement or an expression-bodied member whose value doesn't match the declared return quantity.
-Property getters are checked against the property's declared quantity, and async methods against the `T` of
-`Task<T>`.
+The analyzer reports this on a `return` statement or an expression body. Property getters are checked against the
+property. Async methods are checked against the `T` of `Task<T>`. Local functions and lambdas with a declared return
+quantity are checked against themselves, not the enclosing method.
 
-### Wrong quantity
-
-```csharp
-internal static Kelvin Convert(Pascal pressure)
-{
-    return pressure;
-}
-```
-
-```text
-error QNT004: Returned expression has quantity 'length^-1 mass^1 time^-2', but the method returns 'temperature'
-```
-
-### A formula that doesn't balance
-
-The method returns a force. Newton's second law gives
-
-$$
-F = m a, \qquad [F] = M\,L\,T^{-2}
-$$
-
-and an acceleration is a length over time squared. Dropping a factor of time:
+Newton's second law gives $[F] = M\,L\,T^{-2}$. Dropping one factor of time:
 
 ```csharp
-internal static Newton Force(Kilogram mass, Metre distance, Second time)
-{
-    return mass * distance / time;
-}
+internal static Newton Force(Kilogram mass, Metre distance, Second time) => mass * distance / time;
 ```
 
 ```text
 error QNT004: Returned expression has quantity 'length^1 mass^1 time^-1', but the method returns 'length^1 mass^1 time^-2'
 ```
 
-The correct version divides by $t^2$:
+Divide by `time * time` to fix it.
 
-```csharp
-return mass * distance / (time * time);
-```
-
-The analyzer reads `time * time` as `time^2`, then the full expression as `length^1 mass^1 time^-2`, which matches.
-
-### Squaring when you meant to scale
-
-```csharp
-internal static Metre Wrong(Metre d) => d * d;
-```
-
-```text
-error QNT004: Returned expression has quantity 'length^2', but the method returns 'length'
-```
-
-### Unannotated return type
-
-A method that returns an unannotated `float` can't return a quantity, for the same reason `float x = pressure;` is
-rejected:
+A method that returns a plain `float` cannot return a quantity, for the same reason as `float x = pressure;`:
 
 ```csharp
 internal static float Raw(Pascal pressure) => pressure;
+// error QNT004: Returned expression has quantity 'length^-1 mass^1 time^-2', but the method returns 'unannotated scalar'
 ```
 
-```text
-error QNT004: Returned expression has quantity 'length^-1 mass^1 time^-2', but the method returns 'unannotated scalar'
-```
-
-The reverse is allowed: a method declared to return `Kelvin` may return a raw `float`.
-
-### Local functions and lambdas
-
-A `return` inside a local function is checked against the local function, not the method it sits in:
-
-```csharp
-internal static Pascal Run(Pascal pressure)
-{
-    Kelvin Read() => pressure;
-    return pressure;
-}
-```
-
-```text
-error QNT004: Returned expression has quantity 'length^-1 mass^1 time^-2', but the method returns 'temperature'
-```
-
-A lambda is checked the same way when it declares a return quantity, as in `Kelvin () => pressure`. A lambda without
-one, such as `() => pressure` assigned to a `Func<Pascal>`, isn't checked.
-
-### Conversions
-
-A generated conversion returns its canonical quantity:
-
-```csharp
-internal static Kelvin Valid() => UnitConversions.FromCelsius(20f);
-internal static Pascal Invalid() => UnitConversions.FromCelsius(20f);
-```
-
-```text
-error QNT004: Returned expression has quantity 'temperature', but the method returns 'length^-1 mass^1 time^-2'
-```
-
----
-
-## QNT000
-
-**Invalid units catalog.** `Invalid units catalog: {0}`
-
-Reported on the offending line of a `.magnitudo` file when a quantity or conversion can't be parsed. The invalid line is
-skipped and the others still load. Messages and causes are in [catalog.md](catalog.md#catalog-errors); a few common
-ones:
-
-```text
-pressure | Pascal | global::System.Single
-```
-
-```text
-Units.magnitudo(3,1): error QNT000: Invalid units catalog: Expected 'id | alias | storage type | dimensions'.
-```
-
-```text
-pressure | Pascal | global::System.Single | mass=1,length=-1.5
-```
-
-```text
-Units.magnitudo(4,1): error QNT000: Invalid units catalog: Invalid dimension entry 'length=-1.5'.
-```
-
-```text
-convert | temperature | Celsius | global::System.Single | 0 | 273.15
-```
-
-```text
-Units.magnitudo(5,1): error QNT000: Invalid units catalog: Conversion scale must be a finite, nonzero number.
-```
-
-Exponents are whole numbers. Magnitudo doesn't represent fractional exponents.
-
-After a catalog error, expect follow-on errors where the skipped alias is used: the type name is no longer defined, and
-the C# compiler will say so.
-
----
+A method declared to return `Kelvin` can return a raw `float`.
 
 ## Severity and suppression
 
-These are ordinary Roslyn diagnostics, so the usual controls apply. Magnitudo adds none of its own.
-
-To change a rule's severity for a project or folder, use `.editorconfig`. This is useful while migrating existing code:
+These are ordinary Roslyn diagnostics. Magnitudo adds no controls of its own. Use `.editorconfig` to change a rule's
+severity for a project or folder:
 
 ```ini
 [*.cs]
@@ -488,10 +166,7 @@ dotnet_diagnostic.QNT003.severity = warning
 dotnet_diagnostic.QNT001.severity = none
 ```
 
-With that, `QNT003` is reported as a warning and `QNT001` is not reported at all. If your build uses
-`-warnaserror`, as Magnitudo's own CI does, a downgraded rule fails the build again.
-
-A single expression can be suppressed with a pragma:
+Use a pragma for a single statement:
 
 ```csharp
 #pragma warning disable QNT001
@@ -499,15 +174,5 @@ return pressure + temperature;
 #pragma warning restore QNT001
 ```
 
-A suppression is a hole in the analysis. If the same rule needs
-suppressing in many places, the catalog is probably missing a quantity or the code is missing an annotation.
-
-## Build output
-
-In a build, a diagnostic is printed with the usual compiler layout. The location is the expression that is wrong, not
-the whole statement:
-
-```text
-Physics.cs(7,16): error QNT001: Operator '+' cannot combine 'length^-1 mass^1 time^-2' and 'temperature'
-Physics.cs(19,30): error QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'temperature'
-```
+Each suppression is a hole in the analysis. A rule that needs suppressing in many places usually points to a missing
+catalog quantity or a missing annotation.

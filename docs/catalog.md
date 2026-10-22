@@ -1,8 +1,8 @@
-# The catalog
+# The catalog format
 
-A catalog is a text file with the `.magnitudo` extension. It declares the quantities your project uses and, optionally,
-the external units you convert from and to. Magnitudo reads every `.magnitudo` file passed to the compiler as an
-`AdditionalFiles` item, merges them into one catalog, and generates one `global using` alias per quantity.
+A catalog lists the quantities a project uses and the external units it converts to and from. The generator reads every
+`.magnitudo` file passed as an `AdditionalFiles` item and merges them into one catalog. Without a valid quantity line,
+the generator emits nothing and the analyzer reports nothing.
 
 ```xml
 <ItemGroup>
@@ -10,28 +10,7 @@ the external units you convert from and to. Magnitudo reads every `.magnitudo` f
 </ItemGroup>
 ```
 
-Without a valid quantity line, the generator emits nothing and the analyzer stays quiet.
-
-## Dimensions
-
-Each quantity carries a vector of integer exponents over a set of base dimensions. Writing $[q]$ for the dimension of
-a quantity $q$ and $L$, $M$, $T$ for length, mass and time:
-
-$$
-[\text{velocity}] = L\,T^{-1}, \qquad [\text{pressure}] = M\,L^{-1}\,T^{-2}
-$$
-
-The catalog spells the same thing as `length=1,time=-1` and `mass=1,length=-1,time=-2`.
-
-Base dimensions are plain names, not a fixed enum. A project that needs something the SI base set doesn't cover, such as
-a simulation `tick`, adds it by using the name:
-
-```text
-perTick | PerTick | global::System.Single | tick=-1
-```
-
-Two quantities with the same exponent vector are the same dimension to the analyzer, whatever their names. See
-[Same dimension, different meaning](inference.md#same-dimension-different-meaning).
+Lines are pipe-separated. Lines that start with `#` and blank lines are ignored.
 
 ## Quantity lines
 
@@ -41,15 +20,13 @@ stableId | Alias | global::System.Single | baseDimension=exponent,...
 
 | Field | Rule |
 | --- | --- |
-| `stableId` | An identifier. The name `[Quantity("...")]` uses to refer to this line. |
-| `Alias` | An identifier. Becomes the alias you write in code. Unique across the catalog. |
-| storage type | Any type name. Emitted verbatim on the right side of the alias. Not checked by Magnitudo. |
-| dimensions | Comma-separated `name=exponent` pairs. Exponents are integers. `1` or an empty field means dimensionless. |
+| `stableId` | An identifier. `[Quantity("...")]` refers to the quantity by this name. |
+| `Alias` | An identifier, unique across the catalog. Code uses it as a type name. |
+| Storage type | Any type name. The generator emits it verbatim and does not check it. |
+| Dimensions | Comma-separated `name=exponent` pairs with integer exponents. `1` or an empty field means dimensionless. |
 
-An identifier starts with a letter or `_` and continues with letters, digits or `_`. A zero exponent is dropped, so
-`length=1,time=0` is the same as `length=1`.
-
-A complete small catalog:
+An identifier starts with a letter or `_` and continues with letters, digits, or `_`. The parser drops zero exponents,
+so `length=1,time=0` equals `length=1`.
 
 ```text
 # Base quantities
@@ -57,52 +34,32 @@ length      | Metre          | global::System.Single | length=1
 time        | Second         | global::System.Single | time=1
 mass        | Kilogram       | global::System.Single | mass=1
 temperature | Kelvin         | global::System.Single | temperature=1
-amount      | Mole           | global::System.Single | amount=1
 
 # Derived
 velocity    | MetrePerSecond | global::System.Single | length=1,time=-1
-force       | Newton         | global::System.Single | mass=1,length=1,time=-2
 pressure    | Pascal         | global::System.Single | mass=1,length=-1,time=-2
 
-# Same dimension as temperature, double storage
+# Same dimension, double storage
 temperature64 | Kelvin64     | global::System.Double | temperature=1
 
-# No dimensions
+# Dimensionless
 ratio       | Ratio          | global::System.Single | 1
 ```
 
-Lines starting with `#` and blank lines are ignored.
-
-### What gets generated
-
-For each quantity, one line in `Magnitudo.QuantityAliases.g.cs`:
+The generator writes one line per quantity to `Magnitudo.QuantityAliases.g.cs`:
 
 ```csharp
 global using Kelvin = global::System.Single;
 global using Kelvin64 = global::System.Double;
-global using Metre = global::System.Single;
 ```
 
-An alias is a compile-time name. `Kelvin` is `System.Single` in the compiled assembly, so `Kelvin[]` is a `float[]`,
-arithmetic is ordinary float arithmetic, and nothing is boxed or wrapped. The same holds for Native AOT and trimming:
-there is no Magnitudo type left at runtime.
-
-The converse is that the C# compiler doesn't distinguish `Kelvin` from `Pascal`. Only the analyzer does.
-
-### Several storage types
-
-The same dimensions may appear under more than one alias. This is how a project keeps single- and double-precision
-versions of a quantity:
-
-```text
-temperature   | Kelvin   | global::System.Single | temperature=1
-temperature64 | Kelvin64 | global::System.Double | temperature=1
-```
-
-The analyzer treats `Kelvin` and `Kelvin64` as compatible. It does not check that a narrowing `double` to `float`
-conversion is intended; the C# compiler does that as usual.
+Two aliases with the same exponents are compatible, so `Kelvin` and `Kelvin64` mix freely. The analyzer does not check
+the narrowing from `double` to `float`. The C# compiler handles that as usual.
 
 ## Conversion lines
+
+A conversion relates an external unit to the canonical quantity. Use conversions at the edge of a program: sensor
+input, user input, and printed output. Work in canonical units everywhere else.
 
 ```text
 convert | stableId | ExternalUnitName | global::System.Single | scale | offset
@@ -110,87 +67,54 @@ convert | stableId | ExternalUnitName | global::System.Single | scale | offset
 
 | Field | Rule |
 | --- | --- |
-| `stableId` | The `stableId` of an existing quantity line. |
-| `ExternalUnitName` | An identifier. Unique across all conversions, not just within one quantity. |
-| storage type | The type of the external value, emitted for the method's parameter and return type. |
-| `scale` | A finite, nonzero number. Parsed with the invariant culture. |
+| `stableId` | The ID of an existing quantity line. |
+| `ExternalUnitName` | An identifier, unique across all conversions in the catalog. |
+| Storage type | The type of the external value. |
+| `scale` | A finite, nonzero number, parsed with the invariant culture. |
 | `offset` | A finite number. |
 
-The conversion relates the external value $x$ to the canonical value $c$ by
-
-$$
-c = x \cdot s + b
-$$
-
-where $s$ is `scale` and $b$ is `offset`. Magnitudo emits both directions:
-
-| Method | Computes |
-| --- | --- |
-| `From<Unit>(x)` | $x \cdot s + b$ |
-| `To<Unit>(c)` | $(c - b) / s$ |
-
-Given a Celsius and a Fahrenheit conversion:
+The canonical value $c$ relates to the external value $x$ by $c = x \cdot s + b$, where $s$ is `scale` and $b$ is
+`offset`. The generator emits both directions in the public class `Magnitudo.Generated.UnitConversions`:
 
 ```text
 temperature | Kelvin | global::System.Single | temperature=1
-convert | temperature | Celsius    | global::System.Single | 1         | 273.15
-convert | temperature | Fahrenheit | global::System.Single | 0.5555556 | 255.37222
+convert | temperature | Celsius | global::System.Single | 1 | 273.15
 ```
-
-the generator adds:
 
 ```csharp
-namespace Magnitudo.Generated
-{
-    public static class UnitConversions
-    {
-        [return: global::Magnitudo.QuantityAttribute("temperature")]
-        public static global::System.Single FromCelsius(global::System.Single value) => value * 1.0f + 273.15f;
+[return: global::Magnitudo.QuantityAttribute("temperature")]
+public static global::System.Single FromCelsius(global::System.Single value) => value * 1.0f + 273.15f;
 
-        public static global::System.Single ToCelsius(
-            [global::Magnitudo.QuantityAttribute("temperature")] global::System.Single value) => (value - 273.15f) / 1.0f;
-
-        // FromFahrenheit and ToFahrenheit follow the same shape.
-    }
-}
+public static global::System.Single ToCelsius(
+    [global::Magnitudo.QuantityAttribute("temperature")] global::System.Single value) => (value - 273.15f) / 1.0f;
 ```
 
-Number literals take an `f` suffix when the storage type is `float` or ends in `Single`, `m` when it is `decimal` or
-ends in `Decimal`, and `d` otherwise.
+The attributes let the analyzer check both sides. `FromCelsius(20f)` is a temperature, and `ToCelsius(pressure)` is
+[QNT003](diagnostics.md#qnt003). The project needs the `Magnitudo` package for the attribute type.
 
-The `[Quantity]` attributes on the generated methods are what let the analyzer follow a value across the boundary.
-`FromCelsius(20f)` is a `temperature`; passing a `Pascal` to `ToCelsius` is a [QNT003](diagnostics.md#qnt003).
-`Magnitudo.Generated.UnitConversions` is public, so it needs the `Magnitudo` package referenced for the attribute type.
-
-Conversions are meant for the edge of a program: reading a sensor, parsing user input, printing a result. Inside, work
-in canonical units. Because the formula is affine, `FromCelsius(a) - FromCelsius(b)` is a difference in kelvin, which
-is what you want; `FromCelsius(a) + FromCelsius(b)` is a sum of two absolute temperatures, which the analyzer can't
-tell is meaningless.
+Number literals get an `f` suffix when the storage type is `float` or ends in `Single`. They get `m` for `decimal` or a
+name ending in `Decimal`, and `d` otherwise.
 
 ## Catalog errors
 
-A malformed line is reported as [QNT000](diagnostics.md#qnt000), with the location of the line, and skipped. The
-rest of the catalog still loads, so one typo doesn't turn every alias into a missing-type error. It will still produce
-errors wherever the skipped alias is used.
+The analyzer reports a malformed line as [QNT000](diagnostics.md#qnt000) and skips it. The rest of the catalog still
+loads. Each message starts with `Invalid units catalog: `.
 
 | Line | Message |
 | --- | --- |
 | `pressure \| Pascal \| global::System.Single` | `Expected 'id \| alias \| storage type \| dimensions'.` |
 | `pressure \| 9Pascal \| global::System.Single \| mass=1` | `Quantity IDs and aliases must be identifiers and a storage type is required.` |
 | `pressure \| Pascal \| global::System.Single \| mass:1` | `Invalid dimension entry 'mass:1'.` |
-| `pressure \| Pascal \| global::System.Single \| mass=one` | `Invalid dimension entry 'mass=one'.` |
+| `pressure \| Pascal \| global::System.Single \| length=-1.5` | `Invalid dimension entry 'length=-1.5'.` |
 | `pressure \| Pascal \| global::System.Single \| mass=1,mass=2` | `Dimension 'mass' is listed more than once.` |
-| a second line using alias `Pascal` | `Alias 'Pascal' is declared more than once.` |
-| a second line using ID `pressure` | `Quantity ID 'pressure' is declared more than once.` |
+| A second line with alias `Pascal` | `Alias 'Pascal' is declared more than once.` |
+| A second line with ID `pressure` | `Quantity ID 'pressure' is declared more than once.` |
 | `convert \| a \| C \| global::System.Single \| 0 \| 0` | `Conversion scale must be a finite, nonzero number.` |
 | `convert \| a \| C \| global::System.Single \| 1` | `Expected 'convert \| quantity id \| unit name \| storage type \| scale \| offset'.` |
 | `convert \| nope \| C \| global::System.Single \| 1 \| 0` | `Conversion 'C' references unknown quantity 'nope'.` |
-| a second `convert` line naming `C` | `Conversion unit 'C' is declared more than once.` |
+| A second `convert` line for `C` | `Conversion unit 'C' is declared more than once.` |
 
-Each message is prefixed with `Invalid units catalog: `. The unknown-quantity error has no file location, because it's
-found after the whole catalog is read.
+The unknown-quantity error has no file location. The parser finds it only after it reads the whole catalog.
 
-### Things the parser doesn't catch
-
-- **Bad storage types.** `global::System.Singel` is passed through. The error shows up in the generated file as an
-  ordinary C# compile error.
+The parser does not check storage types. A typo such as `global::System.Singel` appears as an ordinary C# error in the
+generated file.
