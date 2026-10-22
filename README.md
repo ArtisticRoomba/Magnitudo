@@ -1,16 +1,17 @@
 # Magnitudo
 
-Magnitudo is compile-time dimensional analysis for C#. You list your quantities in a catalog file. A source generator
-turns each one into a `global using` alias, and an analyzer fails the build when an expression mixes dimensions.
+Magnitudo is a compile-time dimensional analysis library for C#.
+
+Magnitudo itself is simple:
+
+- You list your quantities in a catalog file,
+- A source generator turns each one into a `global using` alias, and
+- An analyzer fails the build when an expression mixes dimensions.
 
 ```csharp
 static float Total(Pascal pressure, Kelvin temperature) => pressure + temperature;
 // error QNT001: Operator '+' cannot combine 'length^-1 mass^1 time^-2' and 'temperature'
 ```
-
-> [!WARNING]
-> Magnitudo is young and under active development. Packages use [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
-> Until the public API settles, releases stay in the `0.x` series and ship as prereleases.
 
 ## Strengths
 

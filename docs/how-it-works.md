@@ -119,6 +119,7 @@ Unknown values matter at declarations. The rules differ by position on purpose.
 | Position | Target is known | Target is unknown |
 | --- | --- | --- |
 | Assignment, initializer, `+=`, `-=` | Same dimension, a literal, or unknown | Literal, unknown, or dimensionless |
+| `*=`, `/=` | The result must keep the target's dimension. A literal or unknown factor is accepted. | Literal, unknown, or dimensionless factor |
 | Argument | Same dimension or a literal. Unknown is an error. | Anything |
 | `return` | Same dimension, a literal, or unknown | Literal, unknown, or dimensionless |
 
@@ -132,6 +133,10 @@ exempt.
 
 `*=` and `/=` compute the new dimension and compare it with the target. Only a dimensionless factor or a literal keeps
 the target's dimension, so `distance *= time` is an error and `distance *= 2f` is not.
+
+Compound assignment follows the same rule for an unannotated numeric target. `float total = 0f; total += pressure;`
+is [QNT002](diagnostics.md#qnt002) because `total` would drop the unit. `total *= pressure` and `total /= pressure` are
+errors for the same reason, and `total *= ratio` is not. String concatenation with `+=` is not checked.
 
 An `out` argument is checked in reverse: the caller's variable must accept the parameter's quantity. A `ref` argument
 is checked like a plain argument. An unannotated `ref float` or generic `ref T` accepts anything, so `Swap(ref a, ref b)`

@@ -98,5 +98,7 @@ A large codebase rarely compiles clean on the first build. Downgrade the noisies
 dotnet_diagnostic.QNT003.severity = warning
 ```
 
-Unannotated code is never an error by itself. Start at storage boundaries such as fields, arrays, and public methods.
-Work inward from there. [How Magnitudo works](how-it-works.md) explains which positions accept unannotated values.
+Plain `float` code compiles without errors until it meets a quantity. Passing it to a quantity parameter is
+[QNT003](diagnostics.md#qnt003), and storing a quantity in it is [QNT002](diagnostics.md#qnt002), including `total +=
+pressure`. Start at storage boundaries such as fields, arrays, and public methods. Work inward from there. [How
+Magnitudo works](how-it-works.md) explains which positions accept unannotated values.

@@ -16,12 +16,20 @@ reasons a mistake gets through.
 ## Constructs without a quantity
 
 - Tuples, deconstruction, and `foreach` variables, even when the written type is an alias.
+- Switch expressions. `d switch { > 0f => d, _ => t }` is unknown, so the analyzer does not compare its arms.
+- Pattern variables from `is`. After `if (x is Metre m)`, `m` has no quantity.
 - Whole arrays and collections. Only elements carry a quantity. `Metre[] xs = pascals;` passes, and so does a
   `Pascal[]` passed to a `Metre[]` parameter.
 - `params` arguments. A `params Metre[]` parameter is an array, so the analyzer does not check the values passed to it.
 - `yield return` values. The analyzer does not compare them with the iterator's element type.
 - Lambdas without a declared return quantity. `() => pressure` assigned to a `Func<Kelvin>` passes.
 - String concatenation. `"p=" + pressure + " T=" + temperature` is not a sum.
+
+## Quantities that are not inherited
+
+- An interface member. `[Quantity]` on an interface property does not apply to the implementing property. Code that
+  uses the class sees no quantity. Code that uses the interface does.
+- An override. A member that overrides a `Kelvin` method does not inherit the alias, so declare it again.
 
 ## Code the analyzer skips
 

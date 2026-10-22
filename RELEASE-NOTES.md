@@ -8,7 +8,11 @@ Do not edit released sections by hand pretty please.
 
 ### Breaking changes
 
-*None yet*
+- The analyzer checks field and property initializers (QNT002). Code that built before can now fail.
+- Compound assignment into an unannotated target reports QNT002. `total += pressure` on a plain `float` is an error.
+- `UnitConversions` is internal. It was public.
+- QNT000 rejects `nint` and `nuint` storage, conversions on non-floating storage, keyword alias names, and conversion
+  scales or offsets that are zero or out of range.
 
 ### New features
 
@@ -17,14 +21,19 @@ Do not edit released sections by hand pretty please.
 
 ### Bugfixes
 
-- The analyzer checks field and property initializers (QNT002).
-- Generated aliases compile on C# 10 and 11. Aliases for keyword types such as `float` needed C# 12 before.
+- Generated aliases for keyword, `string`, `object`, and nullable storage types compile on C# 10 and 11.
+- The analyzer no longer fails with AD0001 on declarations from a project reference in the IDE.
+- A user type named like an alias no longer gets the alias's quantity.
+- Generic types such as `ILookup<K, Metre>` no longer cause false QNT002 reports.
+- Messages use the invariant culture.
+- A catalog with only conversion lines reports the missing quantity.
 - README links work on nuget.org.
 
 ### Other
 
 - The docs cover params arrays and alias fields from referenced assemblies.
 - The docs have an install requirements section.
+- The docs cover switch expressions, pattern variables, and quantities that interfaces and overrides do not inherit.
 
 ### Internal
 

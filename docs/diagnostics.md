@@ -29,7 +29,8 @@ ratio       | Ratio          | global::System.Single | 1
 
 `Invalid units catalog: {0}`
 
-The analyzer reports this on the offending line of a `.magnitudo` file. It skips the line and loads the rest.
+The generator reports this on the offending line of a `.magnitudo` file. It skips the line and loads the rest. The
+analyzer reads the catalog silently, so the error needs the generator to run.
 [Catalog errors](catalog.md#catalog-errors) lists every message.
 
 ```text
@@ -37,6 +38,9 @@ Units.magnitudo(4,1): error QNT000: Invalid units catalog: Invalid dimension ent
 ```
 
 Exponents are integers. Expect follow-on C# errors wherever the skipped alias appears.
+
+Other causes are a native integer storage type, an alias that is a C# keyword, a conversion on a non-floating storage
+type, and a conversion scale or offset that is zero or out of range for its storage type.
 
 ## QNT001
 
