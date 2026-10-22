@@ -1,4 +1,6 @@
+import contextlib
 import importlib.util
+import io
 import subprocess
 import sys
 import tempfile
@@ -21,6 +23,21 @@ INSTALL_DOC = (
     '<PackageReference Include="Other.Package" Version="{0}"/>\r\n'
     "```\r\n\r\nVersion=\"{0}\" outside a reference stays.\r\n"
 )
+
+
+def notes_template(entries: dict[str, str] | None = None) -> str:
+    """Return a release notes file whose Master holds `entries`, followed by a 0.1.0-alpha.1 section."""
+    entries = entries or {}
+    master = "".join(
+        f"### {name}\n\n{entries.get(name, '*None yet*')}\n\n" for name in version_tool.NOTE_SUBSECTIONS
+    )
+    return (
+        "<!-- intro -->\n\n## Master\n\n" + master + "## 0.1.0-alpha.1\n\n### Other\n\n- First release.\n"
+    )
+
+
+def write_release_notes(root: Path, contents: str | None = None) -> None:
+    (root / version_tool.RELEASE_NOTES_FILE).write_bytes((contents or notes_template()).encode("utf-8"))
 
 
 def write_install_doc(root: Path, version: str, contents: str = INSTALL_DOC) -> None:
@@ -104,6 +121,7 @@ class VersionFileTests(unittest.TestCase):
             root = Path(directory)
             (root / version_tool.VERSION_FILE).write_text(contents, encoding="utf-8")
             write_install_doc(root, "0.1.0-alpha.1")
+            write_release_notes(root)
 
             self.assertEqual(0, version_tool.main(["--repo", str(root), "bump", "prerelease"]))
             updated = (root / version_tool.VERSION_FILE).read_text(encoding="utf-8")
@@ -117,6 +135,7 @@ class InstallDocTests(unittest.TestCase):
         root = Path(directory)
         (root / version_tool.VERSION_FILE).write_text(PROPS.format(props_version), encoding="utf-8")
         write_install_doc(root, doc_version)
+        write_release_notes(root)
         return root
 
     def read_doc(self, root: Path) -> bytes:
@@ -184,6 +203,134 @@ class InstallDocTests(unittest.TestCase):
                 version_tool.verify(root)
 
 
+class ReleaseNotesTests(unittest.TestCase):
+    VERSION = version_tool.SemanticVersion.parse("0.2.0")
+    PATH = Path("RELEASE-NOTES.md")
+
+    def roll(self, text: str) -> str:
+        return version_tool.roll_release_notes(text, self.VERSION, self.PATH)
+
+    def test_rollover_moves_entries_drops_empty_subsections_and_resets_master(self) -> None:
+        text = notes_template({"New features": "- Added a thing.\n- Added another.", "Internal": "- Tests."})
+        expected = (
+            "<!-- intro -->\n\n## Master\n\n"
+            + "".join(f"### {name}\n\n*None yet*\n\n" for name in version_tool.NOTE_SUBSECTIONS)
+            + "## 0.2.0\n\n### New features\n\n- Added a thing.\n- Added another.\n\n### Internal\n\n- Tests.\n\n"
+            + "## 0.1.0-alpha.1\n\n### Other\n\n- First release.\n"
+        )
+        self.assertEqual(expected, self.roll(text))
+
+    def test_rollover_of_empty_master_says_none(self) -> None:
+        self.assertIn("## 0.2.0\n\n*None*\n\n## 0.1.0-alpha.1", self.roll(notes_template()))
+
+    def test_rollover_keeps_text_outside_master_byte_for_byte(self) -> None:
+        text = notes_template({"Bugfixes": "- Fixed."})
+        before = "<!-- intro -->\n\n"
+        after = "## 0.1.0-alpha.1\n\n### Other\n\n- First release.\n"
+        rolled = self.roll(text)
+        self.assertTrue(rolled.startswith(before))
+        self.assertTrue(rolled.endswith(after))
+
+    def test_rollover_preserves_crlf(self) -> None:
+        text = notes_template({"Bugfixes": "- Fixed."}).replace("\n", "\r\n")
+        rolled = self.roll(text)
+        self.assertNotIn("\n", rolled.replace("\r\n", ""))
+        self.assertIn("## 0.2.0\r\n\r\n### Bugfixes\r\n\r\n- Fixed.\r\n\r\n## 0.1.0-alpha.1", rolled)
+
+    def test_rollover_of_final_master_section_adds_no_trailing_blank_line(self) -> None:
+        text = "## Master\n\n### Other\n\n- Note.\n"
+        self.assertTrue(self.roll(text).endswith("## 0.2.0\n\n### Other\n\n- Note.\n"))
+
+    def test_rollover_accepts_a_partial_master_template(self) -> None:
+        rolled = self.roll("## Master\n\n### Bugfixes\n\n- Fixed.\n\n## 0.1.0\n\nold\n")
+        self.assertIn("## 0.2.0\n\n### Bugfixes\n\n- Fixed.\n\n## 0.1.0\n\nold\n", rolled)
+
+    def test_rollover_rejects_malformed_notes(self) -> None:
+        cases = {
+            "missing Master": ("## 0.1.0\n\nold\n", "'## Master' section"),
+            "duplicate Master": ("## Master\n\n## Master\n", "'## Master' section"),
+            "unknown subsection": ("## Master\n\n### Bugfix\n\n- x\n", "unknown subsection 'Bugfix'"),
+            "duplicate subsection": ("## Master\n\n### Other\n\n### Other\n", "duplicate subsection"),
+            "stray text": ("## Master\n\nstray\n\n### Other\n", "before the first subsection"),
+            "existing version": ("## Master\n\n## 0.2.0\n\nold\n", "already has a section for 0.2.0"),
+        }
+        for name, (text, message) in cases.items():
+            with self.subTest(name):
+                with self.assertRaisesRegex(version_tool.VersionError, message):
+                    self.roll(text)
+
+    def create_root(self, directory: str, notes: str | None = None) -> Path:
+        root = Path(directory)
+        (root / version_tool.VERSION_FILE).write_text(PROPS.format("0.1.0-alpha.1"), encoding="utf-8")
+        write_install_doc(root, "0.1.0-alpha.1")
+        write_release_notes(root, notes)
+        return root
+
+    def test_each_writing_command_rolls_the_notes_over(self) -> None:
+        commands = (
+            (["set", "0.3.0"], "0.3.0"),
+            (["bump", "minor"], "0.2.0"),
+            (["promote"], "0.1.0"),
+        )
+        for arguments, version in commands:
+            with self.subTest(arguments), tempfile.TemporaryDirectory() as directory:
+                root = self.create_root(directory, notes_template({"Bugfixes": "- Fixed."}))
+                self.assertEqual(0, version_tool.main(["--repo", str(root), *arguments]))
+                updated = (root / version_tool.RELEASE_NOTES_FILE).read_text(encoding="utf-8")
+                self.assertIn(f"## {version}\n\n### Bugfixes\n\n- Fixed.\n", updated)
+
+    def test_malformed_notes_fail_before_writing_any_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.create_root(directory, "## Master\n\n### Typo\n")
+            install = (root / version_tool.SYNCED_DOCS[0]).read_bytes()
+            self.assertEqual(2, version_tool.main(["--repo", str(root), "set", "0.2.0"]))
+            props = (root / version_tool.VERSION_FILE).read_text(encoding="utf-8")
+            self.assertEqual(install, (root / version_tool.SYNCED_DOCS[0]).read_bytes())
+
+        self.assertEqual(PROPS.format("0.1.0-alpha.1"), props)
+
+    def test_missing_notes_fail_before_writing_version_props(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.create_root(directory)
+            (root / version_tool.RELEASE_NOTES_FILE).unlink()
+            self.assertEqual(2, version_tool.main(["--repo", str(root), "set", "0.2.0"]))
+            props = (root / version_tool.VERSION_FILE).read_text(encoding="utf-8")
+
+        self.assertEqual(PROPS.format("0.1.0-alpha.1"), props)
+
+    def test_notes_command_prints_a_version_or_master(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.create_root(directory, notes_template({"Bugfixes": "- Fixed."}))
+            for arguments, expected in (
+                (["notes", "0.1.0-alpha.1"], "### Other\n\n- First release.\n"),
+                (["notes"], "### Breaking changes\n\n*None yet*\n\n### New features"),
+            ):
+                with self.subTest(arguments), contextlib.redirect_stdout(io.StringIO()) as output:
+                    self.assertEqual(0, version_tool.main(["--repo", str(root), *arguments]))
+                    self.assertTrue(output.getvalue().startswith(expected))
+            self.assertEqual("### Other\n\n- First release.\n", self.print_notes(root, "0.1.0-alpha.1"))
+            self.assertEqual(2, version_tool.main(["--repo", str(root), "notes", "9.9.9"]))
+
+    def print_notes(self, root: Path, version: str) -> str:
+        with contextlib.redirect_stdout(io.StringIO()) as output:
+            version_tool.main(["--repo", str(root), "notes", version])
+        return output.getvalue()
+
+    def test_verify_requires_a_section_for_the_current_version(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.create_root(directory, notes_template({"Bugfixes": "- Pending."}))
+            version_tool.verify_release_notes(root, version_tool.SemanticVersion.parse("0.1.0-alpha.1"))
+            with self.assertRaisesRegex(version_tool.VersionError, "'## 0.1.0' section"):
+                version_tool.verify_release_notes(root, version_tool.SemanticVersion.parse("0.1.0"))
+
+    def test_verify_rejects_missing_notes_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = self.create_root(directory)
+            (root / version_tool.RELEASE_NOTES_FILE).unlink()
+            with self.assertRaisesRegex(version_tool.VersionError, "do not exist"):
+                version_tool.verify(root)
+
+
 class GitReleaseTests(unittest.TestCase):
     VERSION_FILE = """<Project>\n    <PropertyGroup>\n        <Version>0.1.0-alpha.1</Version>\n        <PackageVersion>$(Version)</PackageVersion>\n        <AssemblyVersion>0.0.0.0</AssemblyVersion>\n        <FileVersion>0.1.0.0</FileVersion>\n    </PropertyGroup>\n</Project>\n"""
 
@@ -191,6 +338,7 @@ class GitReleaseTests(unittest.TestCase):
         root = Path(directory)
         (root / version_tool.VERSION_FILE).write_text(self.VERSION_FILE, encoding="utf-8")
         write_install_doc(root, "0.1.0-alpha.1")
+        write_release_notes(root)
         subprocess.run(["git", "init", "--initial-branch=master"], cwd=root, check=True, capture_output=True)
         subprocess.run(["git", "config", "user.name", "Magnitudo Tests"], cwd=root, check=True)
         subprocess.run(["git", "config", "user.email", "tests@example.invalid"], cwd=root, check=True)

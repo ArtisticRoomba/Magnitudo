@@ -14,6 +14,12 @@ VERSION_FILE = Path("Version.props")
 # Docs that quote the package version. Each file must contain a PackageReference to a Magnitudo package.
 SYNCED_DOCS = (Path("docs/install.md"),)
 PACKAGE_NAMES = ("Magnitudo", "Magnitudo.Analyzers")
+RELEASE_NOTES_FILE = Path("RELEASE-NOTES.md")
+MASTER_HEADING = "## Master"
+# The order matters: Master and every released section list their subsections in this order.
+NOTE_SUBSECTIONS = ("Breaking changes", "New features", "Bugfixes", "Other", "Internal")
+NO_ENTRIES_YET = "*None yet*"
+NO_ENTRIES = "*None*"
 
 PRERELEASE_IDENTIFIER = r"(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
 BUILD_IDENTIFIER = r"[0-9A-Za-z-]+"
@@ -210,15 +216,123 @@ def read_doc(root: Path, doc: Path) -> str:
     return path.read_bytes().decode("utf-8")
 
 
-def write_versions(root: Path, version: SemanticVersion) -> None:
-    """Write `version` to Version.props and to each synced doc.
+def split_lines(text: str) -> list[str]:
+    """Split `text` at `\\n` only, keeping each line ending, so that joining the lines returns `text`."""
+    return re.findall(r"[^\n]*\n|[^\n]+", text)
 
-    The docs are checked first, so a missing doc or reference leaves Version.props unchanged.
+
+def read_release_notes(root: Path) -> str:
+    """Return the text of the release notes with its line endings unchanged. Raise VersionError when missing."""
+    path = root / RELEASE_NOTES_FILE
+    if not path.is_file():
+        raise VersionError(f"release notes '{path}' do not exist")
+    return path.read_bytes().decode("utf-8")
+
+
+def find_section(lines: list[str], heading: str, path: Path) -> tuple[int, int]:
+    """Return the line range of the `## ` section `heading`, from its heading line to the next `## ` heading.
+
+    Raise VersionError unless the heading appears exactly once.
+    """
+    starts = [index for index, line in enumerate(lines) if line.rstrip() == heading]
+    if len(starts) != 1:
+        raise VersionError(f"expected exactly one '{heading}' section in '{path}'")
+    end = next((index for index in range(starts[0] + 1, len(lines)) if lines[index].startswith("## ")), len(lines))
+    return starts[0], end
+
+
+def trim_blank_lines(lines: list[str]) -> list[str]:
+    """Return `lines` without leading and trailing blank lines."""
+    start, end = 0, len(lines)
+    while start < end and not lines[start].strip():
+        start += 1
+    while end > start and not lines[end - 1].strip():
+        end -= 1
+    return lines[start:end]
+
+
+def parse_master(body: list[str], path: Path) -> dict[str, list[str]]:
+    """Return the entry lines of each subsection in the body of the Master section.
+
+    A subsection that holds only `*None yet*` has no entries. Raise VersionError for an unknown or repeated
+    subsection heading, or for text outside a subsection.
+    """
+    entries: dict[str, list[str]] = {}
+    current: list[str] | None = None
+    for line in body:
+        if line.startswith("### "):
+            name = line.rstrip()[4:].strip()
+            if name not in NOTE_SUBSECTIONS:
+                raise VersionError(f"unknown subsection '{name}' under Master in '{path}'")
+            if name in entries:
+                raise VersionError(f"duplicate subsection '{name}' under Master in '{path}'")
+            current = entries[name] = []
+        elif current is not None:
+            current.append(line.rstrip("\r\n"))
+        elif line.strip():
+            raise VersionError(f"text before the first subsection under Master in '{path}'")
+    for name, lines in entries.items():
+        lines[:] = trim_blank_lines(lines)
+        if lines == [NO_ENTRIES_YET]:
+            lines.clear()
+    return entries
+
+
+def roll_release_notes(text: str, version: SemanticVersion, path: Path) -> str:
+    """Return `text` with the Master entries moved into a new `## version` section under Master.
+
+    Master is reset to an empty template. Empty subsections are dropped from the new section, and a release
+    with no entries says `*None*`. The text outside Master keeps its bytes, and new lines use the file's line ending.
+    Raise VersionError when Master is missing or malformed, or when the section for `version` exists.
+    """
+    lines = split_lines(text)
+    start, end = find_section(lines, MASTER_HEADING, path)
+    if any(line.rstrip() == f"## {version}" for line in lines):
+        raise VersionError(f"'{path}' already has a section for {version}")
+    entries = parse_master(lines[start + 1 : end], path)
+
+    eol = "\r\n" if "\r\n" in text else "\n"
+    released: list[str] = [f"## {version}", ""]
+    populated = [name for name in NOTE_SUBSECTIONS if entries.get(name)]
+    for name in populated:
+        released += [f"### {name}", "", *entries[name], ""]
+    if not populated:
+        released += [NO_ENTRIES, ""]
+    master = [MASTER_HEADING, ""]
+    for name in NOTE_SUBSECTIONS:
+        master += [f"### {name}", "", NO_ENTRIES_YET, ""]
+
+    block = master + released
+    if end == len(lines):
+        block.pop()
+    return "".join(lines[:start]) + "".join(line + eol for line in block) + "".join(lines[end:])
+
+
+def release_notes_section(text: str, heading: str, path: Path) -> str:
+    """Return the content below the `## ` section `heading`, without surrounding blank lines."""
+    lines = split_lines(text)
+    start, end = find_section(lines, heading, path)
+    return "\n".join(line.rstrip("\r\n") for line in trim_blank_lines(lines[start + 1 : end]))
+
+
+def verify_release_notes(root: Path, version: SemanticVersion) -> None:
+    """Raise VersionError when the release notes have no section for `version`."""
+    path = root / RELEASE_NOTES_FILE
+    release_notes_section(read_release_notes(root), f"## {version}", path)
+
+
+def write_versions(root: Path, version: SemanticVersion) -> None:
+    """Write `version` to Version.props, to each synced doc, and to the release notes.
+
+    The docs and release notes are computed first, so a missing doc, a missing reference, or malformed release
+    notes leave every file unchanged.
     """
     updated = {doc: sync_package_references(read_doc(root, doc), version, root / doc) for doc in SYNCED_DOCS}
+    notes = roll_release_notes(read_release_notes(root), version, root / RELEASE_NOTES_FILE)
     write_version(root / VERSION_FILE, version)
     for doc, text in updated.items():
         (root / doc).write_bytes(text.encode("utf-8"))
+    (root / RELEASE_NOTES_FILE).write_bytes(notes.encode("utf-8"))
 
 
 def verify_docs(root: Path, version: SemanticVersion) -> None:
@@ -247,7 +361,8 @@ def run_git(root: Path, *arguments: str, check: bool = True) -> subprocess.Compl
 def verify(root: Path) -> SemanticVersion:
     """Check that the version files and synced docs agree.
 
-    Also check that the working tree is clean and HEAD has the same version.
+    Also check that the release notes have a section for the version. Then check that the working tree is clean
+    and HEAD has the same version.
     """
     path = root / VERSION_FILE
     version = read_version(path)
@@ -259,6 +374,7 @@ def verify(root: Path) -> SemanticVersion:
     if read_xml_value(text, "FileVersion", path) != expected_file:
         raise VersionError(f"{path}: FileVersion must be {expected_file}")
     verify_docs(root, version)
+    verify_release_notes(root, version)
 
     status = run_git(root, "status", "--porcelain").stdout
     if status:
@@ -289,6 +405,8 @@ def build_parser() -> argparse.ArgumentParser:
     commands.add_parser("get", help="print the current version")
     commands.add_parser("promote", help="drop the prerelease suffix")
     commands.add_parser("verify", help="check version files, synced docs, and that HEAD is clean and committed")
+    notes_parser = commands.add_parser("notes", help="print the release notes of a version, or Master")
+    notes_parser.add_argument("version", nargs="?")
     commands.add_parser("tag", help="create the annotated vX.Y.Z tag locally")
 
     set_parser = commands.add_parser("set", help="set an exact version")
@@ -320,6 +438,9 @@ def main(arguments: list[str] | None = None) -> int:
             version = read_version(path).promote()
             write_versions(root, version)
             print(version)
+        elif args.command == "notes":
+            heading = f"## {SemanticVersion.parse(args.version)}" if args.version else MASTER_HEADING
+            print(release_notes_section(read_release_notes(root), heading, root / RELEASE_NOTES_FILE))
         elif args.command == "verify":
             print(f"{verify(root)} verified")
         elif args.command == "tag":
