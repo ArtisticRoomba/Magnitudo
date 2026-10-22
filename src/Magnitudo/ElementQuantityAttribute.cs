@@ -38,7 +38,11 @@ public sealed class ElementQuantityAttribute : Attribute
     /// <exception cref="ArgumentException"><paramref name="id" /> is empty or whitespace.</exception>
     public ElementQuantityAttribute(string id)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(id);
+        if (id is null)
+            throw new ArgumentNullException(nameof(id));
+        if (string.IsNullOrWhiteSpace(id))
+            throw new ArgumentException("The quantity ID cannot be empty or whitespace.", nameof(id));
+
         Id = id;
     }
 

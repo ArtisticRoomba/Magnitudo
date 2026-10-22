@@ -17,6 +17,29 @@ normal dependency. `Magnitudo.Analyzers` holds the generator and the analyzer. I
 
 Both packages always ship with the same version. Do not mix versions.
 
+## Requirements
+
+The `Magnitudo` package targets `netstandard2.0` and `net10.0`, so it works from .NET Framework 4.6.1 and later.
+
+The generated aliases are `global using` directives, which need C# 10 or later. Projects that target .NET Framework or
+`netstandard` default to C# 7.3, so set the language version:
+
+```xml
+<PropertyGroup>
+    <LangVersion>10</LangVersion>
+</PropertyGroup>
+```
+
+The analyzer needs a compiler that supports Roslyn 4.0. Use one of these or a later release:
+
+| Tool | Minimum version |
+| --- | --- |
+| .NET SDK | 6.0 |
+| Visual Studio | 2022 17.0 |
+
+An older compiler reports warning CS8032 and skips the analyzer. No aliases are generated, so every alias in your
+code is an unknown type.
+
 ## Write a catalog
 
 Create a file with the `.magnitudo` extension and pass it to the compiler:
