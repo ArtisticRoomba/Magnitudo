@@ -38,7 +38,7 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
                              item => item.Alias,
                              StringComparer.Ordinal))
                     source.Append("global using ").Append(definition.Alias).Append(" = ")
-                        .Append(definition.StorageType).AppendLine(";");
+                        .Append(GetAliasTarget(definition.StorageType)).AppendLine(";");
 
                 if (catalog.Conversions.Length > 0)
                 {
@@ -76,6 +76,36 @@ public sealed class QuantityAliasGenerator : IIncrementalGenerator
                     "Magnitudo.QuantityAliases.g.cs",
                     SourceText.From(source.ToString(), Encoding.UTF8));
             });
+    }
+
+    /// <summary>
+    ///     Returns the type name to use as the target of a <c>global using</c> alias.
+    /// </summary>
+    /// <remarks>
+    ///     Before C# 12, a <c>using</c> alias cannot name a keyword type such as <c>float</c>. The generator maps each
+    ///     keyword to its <c>global::System</c> type so the aliases compile on C# 10 and C# 11.
+    /// </remarks>
+    private static string GetAliasTarget(string storageType)
+    {
+        return storageType switch
+        {
+            "bool" => "global::System.Boolean",
+            "byte" => "global::System.Byte",
+            "sbyte" => "global::System.SByte",
+            "short" => "global::System.Int16",
+            "ushort" => "global::System.UInt16",
+            "int" => "global::System.Int32",
+            "uint" => "global::System.UInt32",
+            "long" => "global::System.Int64",
+            "ulong" => "global::System.UInt64",
+            "nint" => "global::System.IntPtr",
+            "nuint" => "global::System.UIntPtr",
+            "float" => "global::System.Single",
+            "double" => "global::System.Double",
+            "decimal" => "global::System.Decimal",
+            "char" => "global::System.Char",
+            _ => storageType
+        };
     }
 
     /// <summary>

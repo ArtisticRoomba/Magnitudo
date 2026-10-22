@@ -483,6 +483,35 @@ public sealed class DimensionalAnalysisAnalyzerTests
     }
 
     [Test]
+    public void GeneratedAliasesCompileWithCSharp10()
+    {
+        const string source = """
+                              using Magnitudo.Generated;
+
+                              internal static class Inputs
+                              {
+                                  internal static Kelvin Read(Metre length) => UnitConversions.FromCelsius(20f);
+                              }
+                              """;
+
+        const string catalog = """
+                               length | Metre | global::System.Single | length=1
+                               temperature | Kelvin | float | temperature=1
+                               convert | temperature | Celsius | float | 1 | 273.15
+                               """;
+
+        var compilation = GenerateAliases(
+            CreateCompilation(source, languageVersion: LanguageVersion.CSharp10),
+            catalog,
+            out ImmutableArray<Diagnostic> generatorDiagnostics);
+
+        Assert.That(generatorDiagnostics, Is.Empty);
+        Assert.That(
+            compilation.GetDiagnostics().Where(diagnostic => diagnostic.Severity != DiagnosticSeverity.Hidden),
+            Is.Empty);
+    }
+
+    [Test]
     public void QuantityIdMayStartWithConvert()
     {
         GenerateAliases(
@@ -2852,7 +2881,8 @@ public sealed class DimensionalAnalysisAnalyzerTests
 
     private static CSharpCompilation CreateCompilation(
         string source, string assemblyName = "AnalyzerTest",
-        IEnumerable<MetadataReference>? additionalReferences = null)
+        IEnumerable<MetadataReference>? additionalReferences = null,
+        LanguageVersion languageVersion = LanguageVersion.Latest)
     {
         string[] trustedAssemblies = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!)
             .Split(Path.PathSeparator);
@@ -2865,7 +2895,7 @@ public sealed class DimensionalAnalysisAnalyzerTests
 
         return CSharpCompilation.Create(
             assemblyName,
-            [CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(LanguageVersion.Latest))],
+            [CSharpSyntaxTree.ParseText(source, new CSharpParseOptions(languageVersion))],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
     }
