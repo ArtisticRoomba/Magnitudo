@@ -12,14 +12,11 @@ Do not edit released sections by hand pretty please.
 
 ### New features
 
-- `[UnitConversions]` on a `static partial` class makes the generator put catalog conversions there, with the class's
-  own name and accessibility. A library can expose conversions publicly, and the `InternalsVisibleTo` clash with the
-  default class goes away.
-- QNT005 reports a `[UnitConversions]` class that is not static, not partial, generic, or nested.
+*None yet*
 
 ### Bugfixes
 
-- Arrays and collections declared nullable, such as `Mole[]?` or `List<Metre>?`, keep their element quantity. Null-conditional indexing (`values?[0]`) keeps it too.
+*None yet*
 
 ### Other
 
@@ -28,6 +25,19 @@ Do not edit released sections by hand pretty please.
 ### Internal
 
 *None yet*
+
+## 0.3.0-beta.3
+
+### New features
+
+- `[UnitConversions]` on a `static partial` class makes the generator put catalog conversions there, with the class's
+  own name and accessibility. A library can expose conversions publicly, and the `InternalsVisibleTo` clash with the
+  default class goes away.
+- QNT005 reports a `[UnitConversions]` class that is not static, not partial, generic, or nested.
+
+### Bugfixes
+
+- Arrays and collections declared nullable, such as `Mole[]?` or `List<Metre>?`, keep their element quantity. Null-conditional indexing (`values?[0]`) keeps it too.
 
 ## 0.3.0-beta.2
 
