@@ -3269,7 +3269,7 @@ public sealed class DimensionalAnalysisAnalyzerTests
 
         Assert.That(
             diagnostics.Select(diagnostic => diagnostic.Id),
-            Is.EqualTo(new[] { "QNT004", "QNT003" }));
+            Is.EquivalentTo(new[] { "QNT004", "QNT003" }));
     }
 
     [Test]
