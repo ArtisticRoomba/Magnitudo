@@ -16,7 +16,7 @@ Do not edit released sections by hand pretty please.
 
 ### Bugfixes
 
-*None yet*
+- Arrays and collections declared nullable, such as `Mole[]?` or `List<Metre>?`, keep their element quantity. Null-conditional indexing (`values?[0]`) keeps it too.
 
 ### Other
 

@@ -422,6 +422,60 @@ public sealed class DimensionalAnalysisAnalyzerTests
     }
 
     [Test]
+    public async Task NullableCollectionKeepsItsElementQuantity()
+    {
+        const string source = """
+                              #nullable enable
+                              using System.Collections.Generic;
+
+                              internal static class Physics
+                              {
+                                  private static Mole[]? Moles;
+
+                                  internal static void Run(Mole[]? values, List<Metre>? points, ref Mole[] moles)
+                                  {
+                                      Mole ok = values![0];
+                                      Metre okMetre = points![0];
+                                      Second a = values![0];
+                                      Second b = Moles![0];
+                                      Second c = points![0];
+                                      Second d = moles[0];
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(
+            diagnostics.Select(diagnostic => diagnostic.Id),
+            Is.EqualTo(Enumerable.Repeat("QNT002", 4)));
+    }
+
+    [Test]
+    public async Task NullConditionalElementAccessKeepsItsElementQuantity()
+    {
+        const string source = """
+                              #nullable enable
+                              internal static class Physics
+                              {
+                                  internal static void Run(Mole[]? values)
+                                  {
+                                      Mole ok = values?[0] ?? 0;
+                                      Mole? okNullable = values?[0];
+                                      Second a = values?[0] ?? 0;
+                                      Second? b = values?[0];
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(
+            diagnostics.Select(diagnostic => diagnostic.Id),
+            Is.EqualTo(Enumerable.Repeat("QNT002", 2)));
+    }
+
+    [Test]
     public async Task NullableAliasKeepsItsQuantity()
     {
         const string source = """

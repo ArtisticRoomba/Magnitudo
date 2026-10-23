@@ -409,6 +409,8 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                     return InferBinary(binary);
                 case IConditionalOperation conditional:
                     return Merge(Infer(conditional.WhenTrue), Infer(conditional.WhenFalse));
+                case IConditionalAccessOperation conditionalAccess:
+                    return Infer(conditionalAccess.WhenNotNull);
                 case ICoalesceOperation coalesce:
                     return Merge(Infer(coalesce.Value), Infer(coalesce.WhenNull));
                 case IObjectOrCollectionInitializerOperation:
@@ -452,6 +454,17 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
         private QuantityValue GetElementQuantity(IOperation? operation, ITypeSymbol? resultType)
         {
             operation = Unwrap(operation);
+
+            // In `values?[0]` the indexed expression is a placeholder for the receiver of the `?`.
+            if (operation is IConditionalAccessInstanceOperation)
+            {
+                var access = operation.Parent;
+                while (access is not null and not IConditionalAccessOperation)
+                    access = access.Parent;
+
+                operation = Unwrap((access as IConditionalAccessOperation)?.Operation);
+            }
+
             if (operation is IInvocationOperation invocation)
             {
                 var returned = GetAttributeQuantity(
@@ -571,12 +584,13 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 if (type is null)
                     continue;
 
-                if (element)
+                // `Mole[]?` and `ref Mole[]` hold the same elements as `Mole[]`.
+                type = StripNullableAndRef(type);
+                if (element && type is not null)
                     type = GetElementType(type);
 
                 // `Metre?` and `ref Metre` have the same quantity as `Metre`.
-                while (type is NullableTypeSyntax or RefTypeSyntax)
-                    type = type is NullableTypeSyntax nullable ? nullable.ElementType : ((RefTypeSyntax)type).Type;
+                type = StripNullableAndRef(type);
 
                 if (type is null)
                     continue;
@@ -612,6 +626,14 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 ConversionOperatorDeclarationSyntax conversion => conversion.Type,
                 _ => null
             };
+        }
+
+        private static TypeSyntax? StripNullableAndRef(TypeSyntax? type)
+        {
+            while (type is NullableTypeSyntax or RefTypeSyntax)
+                type = type is NullableTypeSyntax nullable ? nullable.ElementType : ((RefTypeSyntax)type).Type;
+
+            return type;
         }
 
         private static TypeSyntax? GetElementType(TypeSyntax type)
