@@ -3238,6 +3238,218 @@ public sealed class DimensionalAnalysisAnalyzerTests
         });
     }
 
+    private const string ConversionCatalog =
+        "temperature | Kelvin | float | temperature=1\n" +
+        "pressure | Pascal | float | mass=1,length=-1,time=-2\n" +
+        "convert | temperature | Celsius | float | 1 | 273.15";
+
+    private static IEnumerable<Diagnostic> WarningsAndErrors(Compilation compilation)
+    {
+        return compilation.GetDiagnostics().Where(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
+    }
+
+    [Test]
+    public async Task PublicHostInANamespaceIsCheckedByTheAnalyzer()
+    {
+        const string source = """
+                              namespace Numos.Units;
+
+                              [Magnitudo.UnitConversions]
+                              public static partial class Temperatures;
+
+                              internal static class Use
+                              {
+                                  internal static Kelvin Good() => Temperatures.FromCelsius(20f);
+                                  internal static Pascal Bad() => Temperatures.FromCelsius(20f);
+                                  internal static float BadArgument(Pascal pressure) => Temperatures.ToCelsius(pressure);
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, ConversionCatalog);
+
+        Assert.That(
+            diagnostics.Select(diagnostic => diagnostic.Id),
+            Is.EqualTo(new[] { "QNT004", "QNT003" }));
+    }
+
+    [Test]
+    public void PublicHostBuildsCleanWithDocumentationChecks()
+    {
+        var compilation = GenerateAliases(
+            CreateCompilation(
+                """
+                namespace Numos.Units;
+
+                /// <summary>Host.</summary>
+                [Magnitudo.UnitConversions]
+                public static partial class Temperatures;
+                """,
+                documentationMode: DocumentationMode.Diagnose),
+            ConversionCatalog,
+            out ImmutableArray<Diagnostic> generatorDiagnostics);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(generatorDiagnostics, Is.Empty);
+            Assert.That(WarningsAndErrors(compilation), Is.Empty);
+            Assert.That(
+                compilation.GetTypeByMetadataName("Numos.Units.Temperatures")!.DeclaredAccessibility,
+                Is.EqualTo(Accessibility.Public));
+        });
+    }
+
+    [Test]
+    public void HostWithoutAModifierIsInternal()
+    {
+        var compilation = GenerateAliases(
+            CreateCompilation("[Magnitudo.UnitConversions]\nstatic partial class Temperatures;"),
+            ConversionCatalog,
+            out ImmutableArray<Diagnostic> generatorDiagnostics);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(generatorDiagnostics, Is.Empty);
+            Assert.That(WarningsAndErrors(compilation), Is.Empty);
+            Assert.That(
+                compilation.GetTypeByMetadataName("Temperatures")!.DeclaredAccessibility,
+                Is.EqualTo(Accessibility.Internal));
+        });
+    }
+
+    [Test]
+    public void HostInTheGlobalNamespaceReceivesConversions()
+    {
+        var compilation = GenerateAliases(
+            CreateCompilation("""
+                              [Magnitudo.UnitConversions]
+                              public static partial class Temperatures;
+
+                              internal static class Use
+                              {
+                                  internal static Kelvin Run() => Temperatures.FromCelsius(1f);
+                              }
+                              """),
+            ConversionCatalog,
+            out ImmutableArray<Diagnostic> generatorDiagnostics);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(generatorDiagnostics, Is.Empty);
+            Assert.That(WarningsAndErrors(compilation), Is.Empty);
+            Assert.That(
+                compilation.SyntaxTrees.Single(tree => tree.FilePath.Contains("Magnitudo.UnitConversions.Temperatures"))
+                    .ToString(),
+                Does.Not.Contain("namespace"));
+        });
+    }
+
+    [Test]
+    public void DefaultClassIsSkippedWhenAHostExists()
+    {
+        var withHost = GenerateAliases(
+            CreateCompilation("[Magnitudo.UnitConversions]\nstatic partial class Temperatures;"),
+            ConversionCatalog,
+            out _);
+        var withoutHost = GenerateAliases(CreateCompilation("static class C { }"), ConversionCatalog, out _);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(withHost.GetTypeByMetadataName("Magnitudo.Generated.UnitConversions"), Is.Null);
+            Assert.That(withoutHost.GetTypeByMetadataName("Magnitudo.Generated.UnitConversions"), Is.Not.Null);
+        });
+    }
+
+    [TestCase("[Magnitudo.UnitConversions]\npartial class Temperatures { }", "Temperatures")]
+    [TestCase("[Magnitudo.UnitConversions]\nstatic class Temperatures { }", "Temperatures")]
+    [TestCase("[Magnitudo.UnitConversions]\nstatic partial class Temperatures<T> { }", "Temperatures")]
+    [TestCase("static partial class Outer\n{\n    [Magnitudo.UnitConversions]\n    static partial class Temperatures { }\n}",
+        "Temperatures")]
+    public void InvalidHostReportsQnt005(string source, string identifier)
+    {
+        var compilation = GenerateAliases(
+            CreateCompilation(source),
+            ConversionCatalog,
+            out ImmutableArray<Diagnostic> diagnostics);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnostics.Select(diagnostic => diagnostic.Id), Is.EqualTo(new[] { "QNT005" }));
+            Assert.That(SpanText(diagnostics.Single()), Is.EqualTo(identifier));
+            Assert.That(diagnostics.Single().Severity, Is.EqualTo(DiagnosticSeverity.Error));
+            Assert.That(
+                compilation.SyntaxTrees.Where(tree => tree.FilePath.Contains("Magnitudo.UnitConversions.")),
+                Is.Empty);
+            Assert.That(compilation.GetTypeByMetadataName("Magnitudo.Generated.UnitConversions"), Is.Null);
+        });
+    }
+
+    [Test]
+    public void LibraryHostWithInternalsVisibleToDoesNotClashWithTheApp()
+    {
+        const string library = """
+                               [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("App")]
+
+                               [Magnitudo.UnitConversions]
+                               public static partial class Temperatures;
+                               """;
+
+        var libraryCompilation = GenerateAliases(CreateCompilation(library, "Library"), ConversionCatalog, out _);
+        var app = GenerateAliases(
+            CreateCompilation(
+                "internal static class C { internal static Kelvin Run() => Temperatures.FromCelsius(1f); }",
+                "App",
+                [libraryCompilation.ToMetadataReference()]),
+            ConversionCatalog,
+            out ImmutableArray<Diagnostic> diagnostics);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnostics, Is.Empty);
+            Assert.That(WarningsAndErrors(app), Is.Empty);
+        });
+    }
+
+    [Test]
+    public async Task AppChecksQuantitiesOfALibraryHostFromMetadata()
+    {
+        MetadataReference library = CompileLibrary(
+            "[Magnitudo.UnitConversions]\npublic static partial class Temperatures;",
+            ConversionCatalog);
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(
+            "internal static class C { internal static Pascal Run() => Temperatures.FromCelsius(1f); }",
+            ConversionCatalog,
+            library);
+
+        Assert.That(diagnostics.Select(diagnostic => diagnostic.Id), Is.EqualTo(new[] { "QNT004" }));
+    }
+
+    [Test]
+    public void PartialHostWithTwoDeclarationsIsGeneratedOnce()
+    {
+        var compilation = GenerateAliases(
+            CreateCompilation("""
+                              [Magnitudo.UnitConversions]
+                              public static partial class Temperatures;
+
+                              public static partial class Temperatures
+                              {
+                                  public static float Extra() => 1f;
+                              }
+                              """),
+            ConversionCatalog,
+            out ImmutableArray<Diagnostic> diagnostics);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(diagnostics, Is.Empty);
+            Assert.That(WarningsAndErrors(compilation), Is.Empty);
+            Assert.That(
+                compilation.SyntaxTrees.Count(tree => tree.FilePath.Contains("Magnitudo.UnitConversions.")),
+                Is.EqualTo(1));
+        });
+    }
+
     private static async Task<ImmutableArray<Diagnostic>> Analyze(
         string source, string catalog,
         params MetadataReference[] references)

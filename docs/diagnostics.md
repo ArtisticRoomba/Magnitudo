@@ -11,6 +11,7 @@ Messages print quantities as exponent vectors, as described in
 | [QNT002](#qnt002) | Incompatible quantity assignment | An assigned value does not match the target's quantity. |
 | [QNT003](#qnt003) | Incompatible argument quantity | An argument does not match the parameter's quantity. |
 | [QNT004](#qnt004) | Incompatible return quantity | A returned value does not match the declared return quantity. |
+| [QNT005](#qnt005) | Invalid conversion class | A `[UnitConversions]` class is not static partial, or is generic or nested. |
 
 The examples use this catalog:
 
@@ -158,6 +159,28 @@ internal static float Raw(Pascal pressure) => pressure;
 ```
 
 A method declared to return `Kelvin` can return a raw `float`.
+
+## QNT005
+
+`Class '{0}' marked [UnitConversions] must be a static partial, non-generic, top-level class`
+
+The generator reports this at the class name when a `[UnitConversions]` class cannot receive conversions. It skips
+that class. The check runs only when the catalog has at least one quantity.
+
+```csharp
+[Magnitudo.UnitConversions]
+public static class Temperatures { }
+// error QNT005: Class 'Temperatures' marked [UnitConversions] must be a static partial, non-generic, top-level class
+```
+
+Add `partial` so the generator can add the methods:
+
+```csharp
+[Magnitudo.UnitConversions]
+public static partial class Temperatures { }
+```
+
+A generic class needs its type parameters removed. A nested class needs to move to the top level.
 
 ## Severity and suppression
 

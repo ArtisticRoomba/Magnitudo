@@ -3,7 +3,7 @@ using Microsoft.CodeAnalysis;
 namespace Magnitudo.Analyzers;
 
 /// <summary>
-///     The descriptors for QNT000 to QNT004. Each new descriptor needs an entry in
+///     The descriptors for QNT000 to QNT005. Each new descriptor needs an entry in
 ///     <c>AnalyzerReleases.Unshipped.md</c>.
 /// </summary>
 internal static class Diagnostics
@@ -46,6 +46,14 @@ internal static class Diagnostics
         "QNT004",
         "Incompatible return quantity",
         "Returned expression has quantity '{0}', but the method returns '{1}'",
+        Category,
+        DiagnosticSeverity.Error,
+        true);
+
+    internal readonly static DiagnosticDescriptor InvalidConversionClass = new(
+        "QNT005",
+        "Invalid conversion class",
+        "Class '{0}' marked [UnitConversions] must be a static partial, non-generic, top-level class",
         Category,
         DiagnosticSeverity.Error,
         true);

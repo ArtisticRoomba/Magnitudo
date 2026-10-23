@@ -77,8 +77,8 @@ Dictionary<int, Metre> byIndex;    // byIndex[7] is a length
 An indexer that declares its own quantity, such as `public Metre this[int i]`, takes precedence over the element type.
 Across assemblies, use `[ElementQuantity("length")]` because the element alias is erased.
 
-The generated conversion methods, such as `UnitConversions.FromCelsius`, carry `[Quantity]` attributes. Their results
-and parameters are therefore known.
+The generated conversion methods, such as `FromCelsius`, carry `[Quantity]` attributes. Their results and parameters
+are therefore known.
 
 ## How quantities combine
 

@@ -12,7 +12,10 @@ Do not edit released sections by hand pretty please.
 
 ### New features
 
-*None yet*
+- `[UnitConversions]` on a `static partial` class makes the generator put catalog conversions there, with the class's
+  own name and accessibility. A library can expose conversions publicly, and the `InternalsVisibleTo` clash with the
+  default class goes away.
+- QNT005 reports a `[UnitConversions]` class that is not static, not partial, generic, or nested.
 
 ### Bugfixes
 
