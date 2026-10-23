@@ -24,6 +24,12 @@ Do not edit released sections by hand pretty please.
 
 ### Internal
 
+*None yet*
+
+## 0.3.0-beta.4
+
+### Internal
+
 - A conversion test no longer depends on diagnostic order, which failed on macOS.
 
 ## 0.3.0-beta.3

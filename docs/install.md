@@ -6,8 +6,8 @@ This page takes a project from no Magnitudo to its first build error.
 
 ```xml
 <ItemGroup>
-    <PackageReference Include="Magnitudo" Version="0.3.0-beta.3"/>
-    <PackageReference Include="Magnitudo.Analyzers" Version="0.3.0-beta.3" PrivateAssets="all"/>
+    <PackageReference Include="Magnitudo" Version="0.3.0-beta.4"/>
+    <PackageReference Include="Magnitudo.Analyzers" Version="0.3.0-beta.4" PrivateAssets="all"/>
 </ItemGroup>
 ```
 
