@@ -8,6 +8,28 @@ Do not edit released sections by hand pretty please.
 
 ### Breaking changes
 
+*None yet*
+
+### New features
+
+*None yet*
+
+### Bugfixes
+
+*None yet*
+
+### Other
+
+*None yet*
+
+### Internal
+
+*None yet*
+
+## 0.4.0-beta.1
+
+### Breaking changes
+
 - A declaration such as `Vector<Pascal>` now carries the quantity of its lanes. Vector code that mixed quantities or
   dropped one into a plain `Vector<float>` built before and can now fail with QNT001 to QNT004.
 - A quantity vector stored into a plain `float[]` or span, or widened into a plain `Vector<double>`, reports QNT002.
@@ -26,18 +48,6 @@ Do not edit released sections by hand pretty please.
   `out` arguments of `Widen` report QNT002.
 - `Math.Sqrt`, `MathF.Sqrt`, `Vector.SquareRoot`, and `Vector128.Sqrt` and its siblings halve the exponents of their
   operand, so `MathF.Sqrt(gamma * pressure / density)` is a velocity. An odd exponent gives an unknown result.
-
-### Bugfixes
-
-*None yet*
-
-### Other
-
-*None yet*
-
-### Internal
-
-*None yet*
 
 ## 0.3.0-beta.4
 
