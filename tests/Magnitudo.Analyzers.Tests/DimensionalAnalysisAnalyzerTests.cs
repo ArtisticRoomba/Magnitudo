@@ -4012,6 +4012,117 @@ public sealed class DimensionalAnalysisAnalyzerTests
         Assert.That(diagnostics, Is.Empty);
     }
 
+    [Test]
+    public async Task SquareRootHalvesEvenExponents()
+    {
+        const string source = """
+                              using System;
+
+                              internal static class Physics
+                              {
+                                  internal static void Run(Metre d, Second t, Ratio r)
+                                  {
+                                      Metre side = MathF.Sqrt(d * d);
+                                      Metre side64 = (float)Math.Sqrt(d * d);
+                                      Second wrong = MathF.Sqrt(d * d);
+                                      float raw = MathF.Sqrt(d * d);
+                                      Metre perSecond = MathF.Sqrt(d * d / (t * t)) * t;
+                                      Ratio ratio = MathF.Sqrt(r);
+                                      float aspect = MathF.Sqrt(r);
+                                      Metre diagonal = d * MathF.Sqrt(2f);
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                diagnostics.Select(SpanText),
+                Is.EquivalentTo(new[] { "MathF.Sqrt(d * d)", "MathF.Sqrt(d * d)" }));
+            Assert.That(
+                diagnostics.Select(diagnostic => diagnostic.GetMessage()),
+                Is.EquivalentTo(new[]
+                {
+                    "Cannot assign 'length' to 'time'",
+                    "Cannot assign 'length' to 'unannotated scalar'"
+                }));
+        });
+    }
+
+    [Test]
+    public async Task SquareRootOfAnOddExponentIsUnknown()
+    {
+        const string source = """
+                              using System;
+
+                              internal static class Physics
+                              {
+                                  internal static void Run(Metre d)
+                                  {
+                                      Second claimed = MathF.Sqrt(d);
+                                      float raw = MathF.Sqrt(d * d * d);
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [TestCase("MathF.Cbrt(d * d * d)")]
+    [TestCase("MathF.Pow(d * d, 0.5f)")]
+    [TestCase("(float)Math.Pow(d * d, 0.5d)")]
+    [TestCase("MathF.ReciprocalSqrtEstimate(d * d)")]
+    public async Task OtherRootsStayUnknown(string expression)
+    {
+        string source = $$"""
+                          using System;
+
+                          internal static class Physics
+                          {
+                              internal static void Run(Metre d)
+                              {
+                                  Second claimed = {{expression}};
+                                  float raw = {{expression}};
+                              }
+                          }
+                          """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task VectorSquareRootHalvesEvenExponents()
+    {
+        const string source = """
+                              using System.Numerics;
+                              using System.Runtime.Intrinsics;
+
+                              internal static class Lanes
+                              {
+                                  internal static void Run(Vector<Metre> d, Vector128<Metre> d128)
+                                  {
+                                      Vector<Metre> side = Vector.SquareRoot(d * d);
+                                      Vector<Second> wrong = Vector.SquareRoot(d * d);
+                                      Vector128<Metre> side128 = Vector128.Sqrt(d128 * d128);
+                                      Vector128<Second> wrong128 = Vector128.Sqrt(d128 * d128);
+                                      Vector<Second> odd = Vector.SquareRoot(d);
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(
+            diagnostics.Select(SpanText),
+            Is.EquivalentTo(new[] { "Vector.SquareRoot(d * d)", "Vector128.Sqrt(d128 * d128)" }));
+    }
+
     private static async Task<ImmutableArray<Diagnostic>> Analyze(
         string source, string catalog,
         params MetadataReference[] references)

@@ -6,8 +6,10 @@ reasons a mistake gets through.
 ## Unknown results
 
 - Methods with plain `float` parameters and return types. Calling them is fine, but the result has no quantity.
-- `Math.Sqrt`, `Math.Pow`, `Math.Cbrt`, and every other `Math` or `MathF` method outside the
-  [quantity-preserving list](how-it-works.md#how-quantities-combine). `Math.Sqrt(area)` is not a length.
+- `Math.Pow`, `Math.Cbrt`, and every other `Math` or `MathF` method outside the
+  [quantity-preserving list](how-it-works.md#how-quantities-combine). `Math.Cbrt(volume)` is not a length.
+- `Math.Sqrt` of a quantity with an odd exponent. `Math.Sqrt(area)` is a length, but `Math.Sqrt(distance)` is
+  unknown.
 - A conditional with mismatched branches. `flag ? length : time` is unknown, so `Metre m = flag ? length : time;`
   passes. Passed to a `Metre` parameter, it is reported as an unannotated argument.
 - The `%` operator, bitwise operators, shifts, `++`, and `--`. The one exception is `&` on vectors, which keeps the
@@ -17,7 +19,7 @@ reasons a mistake gets through.
 ## Vector code
 
 - Vector helper methods outside the [helper table](how-it-works.md#vector-helper-methods). That covers
-  `Vector.SquareRoot`, bit casts such as `AsVectorSingle` and `As<T, U>`, `BitwiseOr`, `Xor`, and shifts.
+  bit casts such as `AsVectorSingle` and `As<T, U>`, `BitwiseOr`, `Xor`, and shifts.
 - Hardware intrinsics such as `Avx.Add`, `Sse.Multiply`, `AdvSimd.Add`, and `Fma.MultiplyAdd`.
 - Masks. Comparison results have no quantity, so a mask turned back into a value, as in `AsVectorSingle(mask) * x`,
   is unknown.

@@ -11,6 +11,8 @@ Do not edit released sections by hand pretty please.
 - A declaration such as `Vector<Pascal>` now carries the quantity of its lanes. Vector code that mixed quantities or
   dropped one into a plain `Vector<float>` built before and can now fail with QNT001 to QNT004.
 - A quantity vector stored into a plain `float[]` or span, or widened into a plain `Vector<double>`, reports QNT002.
+- `Math.Sqrt` and `MathF.Sqrt` have a quantity when every exponent of the operand is even. A square root assigned to a
+  typed target of another dimension, or to a plain `float`, now reports QNT002.
 
 ### New features
 
@@ -22,6 +24,8 @@ Do not edit released sections by hand pretty please.
 - The helpers of `Vector` and `Vector64` to `Vector512` propagate and check lane quantities. `Min`, `Max`,
   `ConditionalSelect`, comparisons, and the `FusedMultiplyAdd` addend report QNT003 on a mismatch. Stores and the
   `out` arguments of `Widen` report QNT002.
+- `Math.Sqrt`, `MathF.Sqrt`, `Vector.SquareRoot`, and `Vector128.Sqrt` and its siblings halve the exponents of their
+  operand, so `MathF.Sqrt(gamma * pressure / density)` is a velocity. An odd exponent gives an unknown result.
 
 ### Bugfixes
 

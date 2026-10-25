@@ -56,7 +56,12 @@ internal enum VectorRule
     /// <summary>
     ///     Writes the first operand's lanes, converted to a wider type, to the <see langword="out" /> arguments.
     /// </summary>
-    Widen
+    Widen,
+
+    /// <summary>
+    ///     A square root, which halves the exponents of its operand.
+    /// </summary>
+    SquareRoot
 }
 
 /// <summary>
@@ -310,6 +315,9 @@ internal static class LaneVectors
         Add(VectorRule.Mask, "BitwiseAnd");
         Add(VectorRule.Store, "Store", "StoreUnsafe", "StoreAligned", "StoreAlignedNonTemporal", "CopyTo", "TryCopyTo");
         Add(VectorRule.Widen, "Widen");
+
+        // System.Numerics.Vector calls it SquareRoot, and Vector64 to Vector512 call it Sqrt.
+        Add(VectorRule.SquareRoot, "SquareRoot", "Sqrt");
 
         // ConditionalSelect(condition, left, right): the condition has the lane type but is a mask.
         rules["ConditionalSelect"] = new VectorMethodRule(VectorRule.Same, 0);

@@ -421,6 +421,9 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                             : GetElementQuantity(source, invocation.Type);
                     }
 
+                    if (IsSquareRoot(invocation.TargetMethod))
+                        return Infer(GetArgument(invocation, 0)).SquareRoot();
+
                     if (IsCopySign(invocation.TargetMethod))
                         return Infer(GetArgument(invocation, 0));
 
@@ -532,6 +535,8 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                     return operands[0].Quantity.Divide(operands[1].Quantity);
                 case VectorRule.FusedMultiplyAdd when operands.Count == 3:
                     return Merge(operands[0].Quantity.Multiply(operands[1].Quantity), operands[2].Quantity);
+                case VectorRule.SquareRoot when operands.Count == 1:
+                    return operands[0].Quantity.SquareRoot();
                 default:
                     return QuantityValue.Unknown;
             }
@@ -938,6 +943,18 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 or BinaryOperatorKind.GreaterThanOrEqual;
         }
 
+        /// <summary>
+        ///     Returns <see langword="true" /> for <c>Math.Sqrt</c> and <c>MathF.Sqrt</c>.
+        /// </summary>
+        /// <remarks>
+        ///     <c>Math.Cbrt</c> and <c>Math.Pow</c> are not square roots, so they stay unknown. <c>Pow</c> would need a
+        ///     constant exponent to have a dimension at all.
+        /// </remarks>
+        private static bool IsSquareRoot(IMethodSymbol method)
+        {
+            return method.Name == "Sqrt" && method.ContainingType.ToDisplayString() is "System.Math" or "System.MathF";
+        }
+
         private static bool IsCopySign(IMethodSymbol method)
         {
             return method.Name == "CopySign" && IsQuantityPreservingMath(method);
@@ -1094,6 +1111,17 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 return Unknown;
 
             return new QuantityValue(Dimensions!.Divide(other.Dimensions!));
+        }
+
+        /// <summary>
+        ///     Halves the exponents. An odd exponent gives unknown, and a literal stays a literal.
+        /// </summary>
+        internal QuantityValue SquareRoot()
+        {
+            if (!IsKnown)
+                return this;
+
+            return Dimensions!.TrySquareRoot(out var root) ? new QuantityValue(root) : Unknown;
         }
 
         public override string ToString()

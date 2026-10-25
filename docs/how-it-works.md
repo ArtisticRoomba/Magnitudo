@@ -100,6 +100,7 @@ $$
 | `c ? a : b`, `a ?? b` | The common dimension, otherwise unknown | None |
 | `Abs`, `Clamp`, `Max`, `MaxMagnitude`, `Min`, `MinMagnitude` on `Math` or `MathF` | The common dimension | [QNT003](diagnostics.md#qnt003) if arguments differ |
 | `CopySign(x, y)` on `Math` or `MathF` | $[x]$ | None, because `y` only supplies a sign |
+| `Sqrt(x)` on `Math` or `MathF` | $[x]^{1/2}$ when every exponent of $[x]$ is even, otherwise unknown | None |
 | A call with a declared return quantity | That quantity | None |
 | Anything else | Unknown | None |
 
@@ -114,6 +115,15 @@ internal static Newton Force(Kilogram m, Metre d, Second t) => m * d / t;
 A dimensionless alias such as `Ratio` is a known quantity, not a literal. Multiplying by it keeps the other operand's
 dimension. Adding it to a length is an error, as is passing it where a length is required. A computed value such as
 `d / d` behaves the same way.
+
+A square root halves each exponent, so a sound speed comes out as a velocity:
+
+$$
+\left[\sqrt{\gamma p / \rho}\right] = \left(M\,L^{-1}\,T^{-2} \cdot M^{-1}\,L^{3}\right)^{1/2} = L\,T^{-1}
+$$
+
+Exponents are integers, so `MathF.Sqrt(distance)` has no dimension in the model. Its result is unknown, not an error.
+A square root of a literal is a literal. `Math.Cbrt` and `Math.Pow` stay unknown.
 
 ## What each position accepts
 
@@ -210,7 +220,8 @@ Operators on vectors use the rules for scalars. The methods of `System.Numerics.
 | `BitwiseAnd`, and the `&` operator | The quantity of the known operand | None |
 | `AndNot(value, mask)` | $[\text{value}]$ | None |
 | `Store`, `StoreUnsafe`, `StoreAligned`, `StoreAlignedNonTemporal`, `CopyTo`, `TryCopyTo` | None | QNT002 if the destination does not accept the vector |
-| Anything else, including `SquareRoot`, bit casts such as `AsVectorSingle`, `BitwiseOr`, `Xor`, and shifts | Unknown | None |
+| `SquareRoot` on `Vector`, `Sqrt` on `Vector64` to `Vector512` | Halved exponents, as for `Math.Sqrt` | None |
+| Anything else, including bit casts such as `AsVectorSingle`, `BitwiseOr`, `Xor`, and shifts | Unknown | None |
 
 The first known operand sets the expected quantity, as for `Math.Max`. The analyzer finds operands by parameter type
 and position, not by name. An `int` index or an offset is never an operand.

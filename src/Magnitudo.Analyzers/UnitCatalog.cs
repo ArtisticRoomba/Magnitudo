@@ -361,6 +361,27 @@ internal sealed class DimensionVector : IEquatable<DimensionVector>
             _exponents.ToImmutableSortedDictionary(pair => pair.Key, pair => -pair.Value, StringComparer.Ordinal));
     }
 
+    /// <summary>
+    ///     Halves every exponent, which is the dimension of a square root.
+    /// </summary>
+    /// <param name="root">The halved dimension, or <see langword="null" /> when the method returns false.</param>
+    /// <returns>
+    ///     <see langword="false" /> when an exponent is odd. Exponents are integers, so <c>length^1</c> has no square
+    ///     root in the model.
+    /// </returns>
+    internal bool TrySquareRoot(out DimensionVector? root)
+    {
+        if (_exponents.Any(pair => pair.Value % 2 != 0))
+        {
+            root = null;
+            return false;
+        }
+
+        root = new DimensionVector(
+            _exponents.ToImmutableSortedDictionary(pair => pair.Key, pair => pair.Value / 2, StringComparer.Ordinal));
+        return true;
+    }
+
     private DimensionVector Combine(DimensionVector other, int sign)
     {
         var result = _exponents.ToBuilder();

@@ -29,7 +29,7 @@ static float Total(Pascal pressure, Kelvin temperature) => pressure + temperatur
 
 - The C# compiler cannot tell `Kelvin` from `Pascal`, so checks cover only annotated code
 - Quantities with the same exponents are interchangeable, so torque and energy look identical
-- `Math.Sqrt`, `Math.Pow`, and most other functions return an unknown quantity
+- `Math.Pow`, `Math.Cbrt`, most other functions, and `Math.Sqrt` of an odd exponent return an unknown quantity
 - Tuples, `foreach` variables, and whole-collection assignments are not checked
 - No fractional exponents
 
