@@ -10,8 +10,25 @@ reasons a mistake gets through.
   [quantity-preserving list](how-it-works.md#how-quantities-combine). `Math.Sqrt(area)` is not a length.
 - A conditional with mismatched branches. `flag ? length : time` is unknown, so `Metre m = flag ? length : time;`
   passes. Passed to a `Metre` parameter, it is reported as an unannotated argument.
-- The `%` operator, bitwise operators, shifts, `++`, and `--`.
+- The `%` operator, bitwise operators, shifts, `++`, and `--`. The one exception is `&` on vectors, which keeps the
+  quantity of the operand that is not a mask.
 - `var` locals initialized from unknown values.
+
+## Vector code
+
+- Vector helper methods outside the [helper table](how-it-works.md#vector-helper-methods). That covers
+  `Vector.SquareRoot`, bit casts such as `AsVectorSingle` and `As<T, U>`, `BitwiseOr`, `Xor`, and shifts.
+- Hardware intrinsics such as `Avx.Add`, `Sse.Multiply`, `AdvSimd.Add`, and `Fma.MultiplyAdd`.
+- Masks. Comparison results have no quantity, so a mask turned back into a value, as in `AsVectorSingle(mask) * x`,
+  is unknown.
+- Generic helpers. `Load<T>(T[] values, int i) => new Vector<T>(values, i)` returns an unknown vector, because `T` is
+  `float` at the call site. Load with `new Vector<float>(values, i)` directly, or write one helper per quantity.
+- Spans made with `AsSpan` or a slice. `new Vector<float>(values, i)` keeps the element quantity, but
+  `new Vector<float>(values.AsSpan(i))` does not. Scalar code has the same limit for `values.AsSpan()[0]`.
+- `MemoryMarshal.Cast` assigned to a local. That is a whole-collection assignment, so the local needs its own
+  declared type, such as `Span<Vector<Pascal>>`.
+- Components of `Vector2`, `Vector3`, and `Vector4`. `.X` has no quantity.
+- Lanes that hold different quantities, such as an interleaved `xyzw` layout. A vector has one lane quantity.
 
 ## Constructs without a quantity
 

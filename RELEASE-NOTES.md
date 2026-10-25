@@ -8,11 +8,20 @@ Do not edit released sections by hand pretty please.
 
 ### Breaking changes
 
-*None yet*
+- A declaration such as `Vector<Pascal>` now carries the quantity of its lanes. Vector code that mixed quantities or
+  dropped one into a plain `Vector<float>` built before and can now fail with QNT001 to QNT004.
+- A quantity vector stored into a plain `float[]` or span, or widened into a plain `Vector<double>`, reports QNT002.
 
 ### New features
 
-*None yet*
+- SIMD vectors are checked. `Vector<T>` and `Vector64<T>` to `Vector512<T>` with an alias type argument have the
+  alias's quantity, and `[Quantity]` on a vector declaration carries it across assemblies.
+- Loads from typed arrays and spans keep the element quantity: vector constructors, `Create`, `LoadUnsafe` with
+  `MemoryMarshal.GetArrayDataReference`, and `MemoryMarshal.Cast`. Broadcast literals and `Vector<T>.Zero` and `One`
+  adopt the quantity they meet.
+- The helpers of `Vector` and `Vector64` to `Vector512` propagate and check lane quantities. `Min`, `Max`,
+  `ConditionalSelect`, comparisons, and the `FusedMultiplyAdd` addend report QNT003 on a mismatch. Stores and the
+  `out` arguments of `Widen` report QNT002.
 
 ### Bugfixes
 

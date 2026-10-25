@@ -150,7 +150,8 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
             type = UnwrapNullable(type);
             return type is not null &&
                    (type.SpecialType is >= SpecialType.System_SByte and <= SpecialType.System_Double ||
-                    type.SpecialType is SpecialType.System_IntPtr or SpecialType.System_UIntPtr);
+                    type.SpecialType is SpecialType.System_IntPtr or SpecialType.System_UIntPtr ||
+                    LaneVectors.IsLaneVector(type));
         }
 
         private static ITypeSymbol? UnwrapNullable(ITypeSymbol? type)
@@ -302,6 +303,11 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
         internal void AnalyzeInvocation(OperationAnalysisContext context)
         {
             var operation = (IInvocationOperation)context.Operation;
+            if (LaneVectors.IsVectorMethod(operation.TargetMethod))
+            {
+                AnalyzeVectorInvocation(context, operation);
+                return;
+            }
 
             // CopySign(x, y) uses only the sign of y, so y can have any quantity.
             if (!IsQuantityPreservingMath(operation.TargetMethod) || IsCopySign(operation.TargetMethod))
@@ -376,6 +382,17 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                     return GetSymbolQuantity(parameter.Parameter);
                 case IFieldReferenceOperation field:
                     return GetSymbolQuantity(field.Field);
+                case IPropertyReferenceOperation property when property.Property.IsIndexer &&
+                                                               LaneVectors.IsLaneVector(property.Instance?.Type):
+                    // Every lane of a vector has the vector's quantity, so `v[i]` is the quantity of `v`.
+                    return Infer(property.Instance);
+                case IPropertyReferenceOperation property when property.Property.IsStatic &&
+                                                               LaneVectors.IsLaneVector(property.Property.ContainingType) &&
+                                                               property.Property.Name is "Zero" or "One":
+                    // `Vector<float>.Zero` and `.One` are broadcast literals, like `0f` and `1f`.
+                    return QuantityValue.LiteralScalar;
+                case IObjectCreationOperation creation when LaneVectors.IsLaneVector(creation.Type):
+                    return InferVectorCreation(creation);
                 case IPropertyReferenceOperation property when property.Property.IsIndexer:
                 {
                     // An indexer that declares its own quantity takes precedence over the element type.
@@ -391,6 +408,18 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                     var declared = GetMethodReturnQuantity(invocation.TargetMethod);
                     if (declared.IsKnown)
                         return declared;
+
+                    if (LaneVectors.IsVectorMethod(invocation.TargetMethod))
+                        return InferVectorInvocation(invocation);
+
+                    if (LaneVectors.IsElementReference(invocation.TargetMethod))
+                    {
+                        // `ref MemoryMarshal.GetArrayDataReference(values)` refers to an element of `values`.
+                        var source = GetArgument(invocation, 0);
+                        return invocation.TargetMethod.Name == "Add"
+                            ? Infer(source)
+                            : GetElementQuantity(source, invocation.Type);
+                    }
 
                     if (IsCopySign(invocation.TargetMethod))
                         return Infer(GetArgument(invocation, 0));
@@ -438,8 +467,206 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                 BinaryOperatorKind.Add or BinaryOperatorKind.Subtract => Merge(left, right),
                 BinaryOperatorKind.Multiply => left.Multiply(right),
                 BinaryOperatorKind.Divide => left.Divide(right),
+                BinaryOperatorKind.And when LaneVectors.IsLaneVector(binary.Type) => MaskMerge(left, right),
                 _ => QuantityValue.Unknown
             };
+        }
+
+        /// <summary>
+        ///     Combines the operands of a bitwise AND on vectors.
+        /// </summary>
+        /// <remarks>
+        ///     Vector code clears lanes with <c>value &amp; mask</c>. Each lane is then the value or zero, so the result
+        ///     keeps the value's quantity. A mask is unknown, so the known operand wins. Two different known
+        ///     quantities give unknown.
+        /// </remarks>
+        private static QuantityValue MaskMerge(QuantityValue left, QuantityValue right)
+        {
+            if (!left.IsKnown)
+                return right.IsKnown ? right : QuantityValue.Unknown;
+
+            if (!right.IsKnown)
+                return left;
+
+            return left.Dimensions!.Equals(right.Dimensions) ? left : QuantityValue.Unknown;
+        }
+
+        /// <summary>
+        ///     Infers <c>new Vector&lt;T&gt;(...)</c> and the same constructors on <c>Vector128&lt;T&gt;</c> and its
+        ///     siblings.
+        /// </summary>
+        /// <remarks>
+        ///     A scalar argument broadcasts, so the vector has the scalar's quantity and a literal stays a literal. An
+        ///     array or span argument loads lanes, so the vector has the element quantity.
+        /// </remarks>
+        private QuantityValue InferVectorCreation(IObjectCreationOperation creation)
+        {
+            if (creation.Arguments.IsDefaultOrEmpty)
+                return QuantityValue.LiteralScalar;
+
+            if (creation.Constructor is not { } constructor)
+                return QuantityValue.Unknown;
+
+            var operands = GetVectorOperands(constructor, null, creation.Arguments);
+            return operands.Count == 0 ? QuantityValue.Unknown : operands[0].Quantity;
+        }
+
+        private QuantityValue InferVectorInvocation(IInvocationOperation invocation)
+        {
+            var rule = LaneVectors.GetRule(invocation.TargetMethod);
+            if (rule.Rule == VectorRule.Unknown)
+                return QuantityValue.Unknown;
+
+            var operands = GetVectorOperands(invocation.TargetMethod, invocation.Instance, invocation.Arguments);
+            switch (rule.Rule)
+            {
+                case VectorRule.Same:
+                    return operands.Select(operand => operand.Quantity).FirstOrDefault(quantity => quantity.IsKnown);
+                case VectorRule.Mask when operands.Count == 2:
+                    return MaskMerge(operands[0].Quantity, operands[1].Quantity);
+                case VectorRule.First:
+                    return operands.Count > 0 ? operands[0].Quantity : QuantityValue.Unknown;
+                case VectorRule.Multiply when operands.Count == 2:
+                    return operands[0].Quantity.Multiply(operands[1].Quantity);
+                case VectorRule.Divide when operands.Count == 2:
+                    return operands[0].Quantity.Divide(operands[1].Quantity);
+                case VectorRule.FusedMultiplyAdd when operands.Count == 3:
+                    return Merge(operands[0].Quantity.Multiply(operands[1].Quantity), operands[2].Quantity);
+                default:
+                    return QuantityValue.Unknown;
+            }
+        }
+
+        /// <summary>
+        ///     Lists the arguments of a vector call that carry lane values, with their quantities.
+        /// </summary>
+        /// <param name="method">The called method or constructor.</param>
+        /// <param name="instance">The receiver of an instance method such as <c>Vector&lt;T&gt;.CopyTo</c>.</param>
+        /// <param name="arguments">The call's arguments.</param>
+        /// <remarks>
+        ///     <see cref="LaneVectors.IsOperand" /> decides which parameters count. An array or span operand
+        ///     contributes its element quantity. The list is in parameter order, after the receiver.
+        /// </remarks>
+        private List<VectorOperand> GetVectorOperands(
+            IMethodSymbol method, IOperation? instance,
+            ImmutableArray<IArgumentOperation> arguments)
+        {
+            var rule = LaneVectors.GetRule(method);
+            var operands = new List<VectorOperand>();
+            if (instance is not null && LaneVectors.IsLaneVector(instance.Type))
+                operands.Add(new VectorOperand(instance, "this", Infer(instance)));
+
+            foreach (var argument in arguments.OrderBy(item => item.Parameter?.Ordinal ?? int.MaxValue))
+            {
+                if (argument.Parameter is not { } parameter || !LaneVectors.IsOperand(method, parameter, rule))
+                    continue;
+
+                var quantity = LaneVectors.TryGetBufferElement(parameter.Type, out var elementType)
+                    ? GetElementQuantity(argument.Value, elementType)
+                    : Infer(argument.Value);
+
+                operands.Add(new VectorOperand(argument.Value, parameter.Name, quantity));
+            }
+
+            return operands;
+        }
+
+        private void AnalyzeVectorInvocation(OperationAnalysisContext context, IInvocationOperation operation)
+        {
+            var rule = LaneVectors.GetRule(operation.TargetMethod);
+            if (rule.Rule == VectorRule.Unknown)
+                return;
+
+            var operands = GetVectorOperands(operation.TargetMethod, operation.Instance, operation.Arguments);
+            switch (rule.Rule)
+            {
+                case VectorRule.Same:
+                case VectorRule.Compare:
+                    ReportOperandMismatches(context, operands);
+                    return;
+                case VectorRule.FusedMultiplyAdd when operands.Count == 3:
+                {
+                    var product = operands[0].Quantity.Multiply(operands[1].Quantity);
+                    var addend = operands[2];
+                    if (AreIncompatible(product, addend.Quantity))
+                    {
+                        context.ReportDiagnostic(
+                            Diagnostic.Create(
+                                Diagnostics.IncompatibleArgument,
+                                addend.Value.Syntax.GetLocation(),
+                                addend.Quantity,
+                                addend.Name,
+                                product));
+                    }
+
+                    return;
+                }
+                case VectorRule.Store when operands.Count == 2:
+                {
+                    // A store is an assignment of every lane to an element of the destination.
+                    var source = operands[0].Quantity;
+                    var destination = operands[1].Quantity;
+                    if (IsIncompatibleAssignment(destination, source))
+                    {
+                        context.ReportDiagnostic(
+                            Diagnostic.Create(
+                                Diagnostics.IncompatibleAssignment,
+                                operation.Syntax.GetLocation(),
+                                source,
+                                destination));
+                    }
+
+                    return;
+                }
+                case VectorRule.Widen when operands.Count > 1:
+                {
+                    // Widen(source, out low, out high) assigns the source's lanes to both halves. Without this check
+                    // the out variables would be unchecked claims, like an assignment from a raw value.
+                    var source = operands[0].Quantity;
+                    foreach (var destination in operands.Skip(1))
+                    {
+                        if (destination.Value is IDiscardOperation ||
+                            !IsIncompatibleAssignment(destination.Quantity, source))
+                            continue;
+
+                        context.ReportDiagnostic(
+                            Diagnostic.Create(
+                                Diagnostics.IncompatibleAssignment,
+                                destination.Value.Syntax.GetLocation(),
+                                source,
+                                destination.Quantity));
+                    }
+
+                    return;
+                }
+            }
+        }
+
+        private static void ReportOperandMismatches(OperationAnalysisContext context, List<VectorOperand> operands)
+        {
+            var expected = QuantityValue.Unknown;
+            foreach (var operand in operands)
+            {
+                if (!operand.Quantity.IsKnown)
+                    continue;
+
+                if (!expected.IsKnown)
+                {
+                    expected = operand.Quantity;
+                    continue;
+                }
+
+                if (AreIncompatible(expected, operand.Quantity))
+                {
+                    context.ReportDiagnostic(
+                        Diagnostic.Create(
+                            Diagnostics.IncompatibleArgument,
+                            operand.Value.Syntax.GetLocation(),
+                            operand.Quantity,
+                            operand.Name,
+                            expected));
+                }
+            }
         }
 
         /// <summary>
@@ -464,6 +691,10 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
 
                 operation = Unwrap((access as IConditionalAccessOperation)?.Operation);
             }
+
+            // `MemoryMarshal.Cast<Pascal, Vector<Pascal>>(pressures)` reinterprets elements without changing lanes.
+            if (operation is IInvocationOperation cast && LaneVectors.IsLaneCast(cast.TargetMethod))
+                return GetElementQuantity(GetArgument(cast, 0), cast.TargetMethod.TypeArguments[0]);
 
             if (operation is IInvocationOperation invocation)
             {
@@ -596,18 +827,54 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
                     continue;
 
                 var semanticModel = _semanticModels.GetOrAdd(type.SyntaxTree, tree => _compilation.GetSemanticModel(tree));
+
+                // A vector has the quantity of its lanes: `Vector<Pascal>` is a pressure, and so is an element of
+                // `Vector<Pascal>[]`.
+                type = GetLaneTypeArgument(type, semanticModel) ?? type;
+
                 var alias = semanticModel.GetAliasInfo(type);
                 if (alias is null || !_catalog.TryGetAlias(alias.Name, out var definition))
                     continue;
 
-                if (expectedType is not null &&
-                    !SymbolEqualityComparer.Default.Equals(alias.Target, UnwrapNullable(expectedType)))
-                    continue;
+                if (expectedType is not null)
+                {
+                    // An element of `Vector<Pascal>[]` has type `Vector<float>` and resolves to the lane alias.
+                    var expected = UnwrapNullable(expectedType);
+                    bool matches = SymbolEqualityComparer.Default.Equals(alias.Target, expected) ||
+                                   (LaneVectors.TryGetLaneType(expected, out var lane) &&
+                                    SymbolEqualityComparer.Default.Equals(alias.Target, lane));
+
+                    if (!matches)
+                        continue;
+                }
 
                 return QuantityValue.From(definition);
             }
 
             return QuantityValue.Unknown;
+        }
+
+        /// <summary>
+        ///     Returns the type argument of a vector type such as <c>Vector&lt;Pascal&gt;</c>, or <see langword="null" />
+        ///     for any other type.
+        /// </summary>
+        private static TypeSyntax? GetLaneTypeArgument(TypeSyntax type, SemanticModel semanticModel)
+        {
+            var generic = type switch
+            {
+                GenericNameSyntax name => name,
+                QualifiedNameSyntax { Right: GenericNameSyntax name } => name,
+                AliasQualifiedNameSyntax { Name: GenericNameSyntax name } => name,
+                _ => null
+            };
+
+            if (generic is not { TypeArgumentList.Arguments.Count: 1 })
+                return null;
+
+            var symbol = semanticModel.GetSymbolInfo(type).Symbol as ITypeSymbol;
+            return LaneVectors.IsLaneVector(symbol)
+                ? StripNullableAndRef(generic.TypeArgumentList.Arguments[0])
+                : null;
         }
 
         private static TypeSyntax? GetDeclaredType(SyntaxNode syntax)
@@ -834,5 +1101,22 @@ public sealed class DimensionalAnalysisAnalyzer : DiagnosticAnalyzer
             return Dimensions?.ToString() ??
                    (IsLiteralScalar ? "numeric literal" : "unannotated scalar");
         }
+    }
+
+    /// <summary>
+    ///     An argument of a vector call that carries lane values, with its parameter name and quantity.
+    /// </summary>
+    private readonly struct VectorOperand
+    {
+        internal VectorOperand(IOperation value, string name, QuantityValue quantity)
+        {
+            Value = value;
+            Name = name;
+            Quantity = quantity;
+        }
+
+        internal IOperation Value { get; }
+        internal string Name { get; }
+        internal QuantityValue Quantity { get; }
     }
 }

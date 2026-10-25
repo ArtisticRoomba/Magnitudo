@@ -3450,6 +3450,568 @@ public sealed class DimensionalAnalysisAnalyzerTests
         });
     }
 
+    [Test]
+    public async Task VectorTypeArgumentCarriesTheLaneQuantity()
+    {
+        const string source = """
+                              using System.Numerics;
+                              using System.Runtime.Intrinsics;
+
+                              internal static class Lanes
+                              {
+                                  internal static Vector<float> Sum(Vector<Pascal> p, Vector<Kelvin> t) => p + t;
+
+                                  internal static Vector128<Pascal> Sum128(Vector128<Pascal> p, Vector128<Kelvin> t) => p - t;
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                diagnostics.Select(diagnostic => diagnostic.Id),
+                Is.EquivalentTo(new[] { "QNT001", "QNT001" }));
+            Assert.That(
+                diagnostics.Select(diagnostic => diagnostic.GetMessage()),
+                Does.Contain("Operator '+' cannot combine 'length^-1 mass^1 time^-2' and 'temperature'"));
+        });
+    }
+
+    [Test]
+    public async Task VectorArithmeticDerivesLaneQuantities()
+    {
+        const string source = """
+                              using System.Numerics;
+
+                              internal static class Lanes
+                              {
+                                  internal static Vector<Pascal> Pressure(
+                                      Vector<Mole> moles, Vector<Kelvin> temperature, PascalPerMoleKelvin factor)
+                                  {
+                                      Vector<Pascal> valid = moles * temperature * new Vector<float>(factor);
+                                      Vector<Pascal> wrong = moles * temperature;
+                                      return valid;
+                                  }
+
+                                  internal static Vector<Metre> Negated(Vector<Metre> d) => -d;
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        var diagnostic = diagnostics.Single();
+        Assert.That(
+            diagnostic.GetMessage(),
+            Is.EqualTo("Cannot assign 'amount^1 temperature^1' to 'length^-1 mass^1 time^-2'"));
+    }
+
+    [Test]
+    public async Task TypedArrayAndSpanLoadsKeepTheElementQuantity()
+    {
+        const string source = """
+                              using System;
+                              using System.Numerics;
+                              using System.Runtime.InteropServices;
+                              using System.Runtime.Intrinsics;
+
+                              internal static class Lanes
+                              {
+                                  internal static void Load(Pascal[] p, Kelvin[] t, ReadOnlySpan<Kelvin> span, int i)
+                                  {
+                                      _ = new Vector<float>(p) + new Vector<float>(t);
+                                      Vector<Kelvin> fromIndex = new Vector<float>(p, i);
+                                      Vector<Pascal> fromSpan = new Vector<float>(span);
+                                      Vector<Kelvin> fromRef = Vector.LoadUnsafe(ref p[i]);
+                                      Vector<Kelvin> fromBase =
+                                          Vector.LoadUnsafe(ref MemoryMarshal.GetArrayDataReference(p), (nuint)i);
+                                      Vector128<Pascal> fromCreate = Vector128.Create(span);
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(
+            diagnostics.Select(diagnostic => diagnostic.Id),
+            Is.EquivalentTo(new[] { "QNT001", "QNT002", "QNT002", "QNT002", "QNT002", "QNT002" }));
+    }
+
+    [Test]
+    public async Task TypedArrayLoadsWithMatchingQuantitiesPass()
+    {
+        const string source = """
+                              using System.Numerics;
+                              using System.Runtime.InteropServices;
+
+                              internal static class Lanes
+                              {
+                                  internal static Vector<Pascal> Load(Pascal[] a, Pascal[] b, int i)
+                                  {
+                                      Vector<Pascal> fromRef = Vector.LoadUnsafe(ref a[i]);
+                                      Vector<Pascal> fromBase =
+                                          Vector.LoadUnsafe(ref MemoryMarshal.GetArrayDataReference(b), (nuint)i);
+                                      Vector<Pascal> fromCast = MemoryMarshal.Cast<Pascal, Vector<Pascal>>(a)[0];
+                                      return new Vector<float>(a, i) + new Vector<float>(b, i) + fromRef + fromBase + fromCast;
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task BroadcastLiteralsAdoptTheLaneQuantity()
+    {
+        const string source = """
+                              using System.Numerics;
+
+                              internal static class Lanes
+                              {
+                                  internal static Vector<Pascal> Clamp(Vector<Pascal> p)
+                                  {
+                                      Vector<float> zero = Vector<float>.Zero;
+                                      Vector<float> half = new Vector<float>(0.5f);
+                                      Vector<Pascal> scaled = p * new Vector<float>(0.5f) + Vector<float>.One;
+                                      Vector<Pascal> shifted = Vector<float>.Zero + p - new Vector<float>(1f);
+                                      Vector<Pascal> floor = Vector.Max(p, Vector<float>.Zero);
+                                      Vector<int> positive = Vector.GreaterThan(p, zero) & Vector.LessThan(p, half);
+                                      Vector<Pascal> selected = Vector.ConditionalSelect(positive, zero, p);
+                                      Vector<Pascal> inverse = Vector<float>.One / (Vector<float>.One / p);
+                                      return scaled + shifted + floor + selected + inverse;
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task BroadcastOfAScalarQuantityKeepsIt()
+    {
+        const string source = """
+                              using System.Numerics;
+
+                              internal static class Lanes
+                              {
+                                  internal static void Broadcast(Pascal pressure, float raw)
+                                  {
+                                      Vector<Pascal> valid = new Vector<float>(pressure);
+                                      Vector<Kelvin> wrong = new Vector<float>(pressure);
+                                      Vector<Kelvin> claimed = new Vector<float>(raw);
+                                      var inferred = new Vector<float>(pressure);
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(
+            diagnostics.Select(SpanText),
+            Is.EquivalentTo(new[] { "new Vector<float>(pressure)", "new Vector<float>(pressure)" }));
+    }
+
+    [Test]
+    public async Task VectorHelpersCheckTheirOperands()
+    {
+        const string source = """
+                              using System.Numerics;
+
+                              internal static class Lanes
+                              {
+                                  internal static void Helpers(
+                                      Vector<Pascal> p, Vector<Kelvin> t, Vector<Metre> d, Vector<Second> s, Vector<int> mask)
+                                  {
+                                      _ = Vector.Min(p, t);
+                                      _ = Vector.ConditionalSelect(mask, p, t);
+                                      _ = Vector.LessThan(p, t);
+                                      _ = Vector.FusedMultiplyAdd(d, d, s);
+                                      Vector<Metre> fma = Vector.FusedMultiplyAdd(d, new Vector<float>(2f), d);
+                                      Vector<Metre> abs = Vector.Abs(d);
+                                      Vector<Second> wrongAbs = Vector.Abs(d);
+                                      Vector<Metre> copied = Vector.CopySign(d, s);
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                diagnostics.Select(diagnostic => diagnostic.Id),
+                Is.EquivalentTo(new[] { "QNT003", "QNT003", "QNT003", "QNT003", "QNT002" }));
+            Assert.That(
+                diagnostics.Select(diagnostic => diagnostic.GetMessage()),
+                Does.Contain(
+                    "Argument has quantity 'temperature', but parameter 'right' requires 'length^-1 mass^1 time^-2'"));
+        });
+    }
+
+    [Test]
+    public async Task ReductionsAndLaneAccessUseTheLaneQuantity()
+    {
+        const string source = """
+                              using System.Numerics;
+
+                              internal static class Lanes
+                              {
+                                  internal static void Reduce(Vector<Metre> d, Vector<Second> s, Vector<Metre>[] batches)
+                                  {
+                                      Metre total = Vector.Sum(d);
+                                      Metre first = d[0];
+                                      Metre combined = (d + d)[1];
+                                      Second wrong = d[0];
+                                      Second dot = Vector.Dot(d, s);
+                                      Vector<Second> element = batches[0];
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(
+            diagnostics.Select(SpanText),
+            Is.EquivalentTo(new[] { "d[0]", "Vector.Dot(d, s)", "batches[0]" }));
+    }
+
+    [Test]
+    public async Task MaskingKeepsTheValueQuantity()
+    {
+        const string source = """
+                              using System.Numerics;
+
+                              internal static class Lanes
+                              {
+                                  internal static void Mask(Vector<Pascal> p, Vector<int> keep)
+                                  {
+                                      Vector<float> bits = Vector.AsVectorSingle(keep);
+                                      Vector<Pascal> masked = Vector.BitwiseAnd(p, bits);
+                                      Vector<Pascal> cleared = Vector.AndNot(p, bits);
+                                      Vector<Pascal> operatorMasked = p & bits;
+                                      Vector<Kelvin> wrong = Vector.BitwiseAnd(p, bits);
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(
+            diagnostics.Select(SpanText),
+            Is.EquivalentTo(new[] { "Vector.BitwiseAnd(p, bits)" }));
+    }
+
+    [Test]
+    public async Task StoresCheckTheDestinationElementQuantity()
+    {
+        const string source = """
+                              using System;
+                              using System.Numerics;
+
+                              internal static class Lanes
+                              {
+                                  internal static void Store(
+                                      Vector<Pascal> p, Pascal[] pressures, Kelvin[] temperatures, float[] raw, Span<Kelvin> span)
+                                  {
+                                      p.CopyTo(pressures, 0);
+                                      Vector.StoreUnsafe(p, ref pressures[0]);
+                                      p.CopyTo(temperatures);
+                                      p.CopyTo(span);
+                                      p.StoreUnsafe(ref temperatures[0], 4);
+                                      p.CopyTo(raw);
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                diagnostics.Select(SpanText),
+                Is.EquivalentTo(new[]
+                {
+                    "p.CopyTo(temperatures)", "p.CopyTo(span)", "p.StoreUnsafe(ref temperatures[0], 4)", "p.CopyTo(raw)"
+                }));
+            Assert.That(
+                diagnostics.Single(diagnostic => SpanText(diagnostic) == "p.CopyTo(raw)").GetMessage(),
+                Is.EqualTo("Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'"));
+        });
+    }
+
+    [Test]
+    public async Task UnannotatedVectorTargetsCannotHoldAQuantity()
+    {
+        const string source = """
+                              using System.Numerics;
+
+                              internal static class Lanes
+                              {
+                                  internal static void Drop(Vector<Pascal> p, Vector<Pascal> q)
+                                  {
+                                      Vector<float> raw = p;
+                                      Vector<float> ratio = p / q;
+                                      Vector<float> total = Vector<float>.Zero;
+                                      total += p;
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(
+            diagnostics.Select(SpanText),
+            Is.EquivalentTo(new[] { "p", "total += p" }));
+    }
+
+    [Test]
+    public async Task UnannotatedVectorCodeHasNoDiagnostics()
+    {
+        const string source = """
+                              using System.Numerics;
+
+                              internal static class Lanes
+                              {
+                                  internal static Vector<float> Kernel(float[] a, float[] b, float scale, int i)
+                                  {
+                                      var x = new Vector<float>(a, i);
+                                      Vector<float> y = new Vector<float>(b, i) * new Vector<float>(scale);
+                                      Vector<int> mask = Vector.GreaterThan(x, y);
+                                      Vector<float> z = Vector.ConditionalSelect(mask, x, y) + Vector<float>.One;
+                                      z.CopyTo(a, i);
+                                      return Vector.SquareRoot(z * z) - Vector.Min(x, y);
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
+    [Test]
+    public async Task CatalogAliasForAVectorTypeKeepsWorking()
+    {
+        const string source = """
+                              using System.Numerics;
+
+                              internal static class Lanes
+                              {
+                                  internal static void Read(PascalVector[] batches, Kelvin[] temperatures)
+                                  {
+                                      PascalVector valid = batches[0];
+                                      Vector<Kelvin> wrong = batches[0];
+                                      PascalVector loaded = new Vector<float>(temperatures);
+                                  }
+                              }
+                              """;
+
+        string catalog = Catalog +
+                         Environment.NewLine +
+                         "pressureVector | PascalVector | global::System.Numerics.Vector<float> | mass=1,length=-1,time=-2";
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, catalog);
+
+        Assert.That(
+            diagnostics.Select(SpanText),
+            Is.EquivalentTo(new[] { "batches[0]", "new Vector<float>(temperatures)" }));
+    }
+
+    [Test]
+    public async Task QuantityAttributeOnVectorApiCrossesAssemblies()
+    {
+        const string library = """
+                               using System.Numerics;
+                               using Magnitudo;
+
+                               public static class Lib
+                               {
+                                   [return: Quantity("pressure")]
+                                   public static Vector<float> Read() => default;
+
+                                   public static void Write([Quantity("temperature")] Vector<float> value) { }
+                               }
+                               """;
+
+        const string source = """
+                              using System.Numerics;
+
+                              internal static class Physics
+                              {
+                                  internal static void Run(Vector<Pascal> pressure, Vector<Kelvin> temperature)
+                                  {
+                                      Lib.Write(temperature);
+                                      Lib.Write(pressure);
+                                      _ = Lib.Read() + temperature;
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(
+            source,
+            Catalog,
+            CompileLibrary(library, Catalog));
+
+        Assert.That(
+            diagnostics.Select(diagnostic => diagnostic.Id),
+            Is.EquivalentTo(new[] { "QNT003", "QNT001" }));
+    }
+
+    [Test]
+    public async Task WidenChecksItsOutTargetsAgainstTheSource()
+    {
+        const string source = """
+                              using System.Numerics;
+
+                              internal static class Lanes
+                              {
+                                  internal static void Widen(Vector<Pascal> p, Vector<float> raw)
+                                  {
+                                      Vector.Widen(p, out Vector<Pascal64> low, out Vector<Pascal64> high);
+                                      Vector.Widen(p, out Vector<Kelvin64> wrongLow, out Vector<Pascal64> rightHigh);
+                                      Vector.Widen(p, out Vector<double> rawLow, out _);
+                                      Vector.Widen(raw, out Vector<Kelvin64> claimedLow, out Vector<Kelvin64> claimedHigh);
+                                  }
+                              }
+                              """;
+
+        string catalog = Catalog +
+                         Environment.NewLine +
+                         "pressure64 | Pascal64 | global::System.Double | mass=1,length=-1,time=-2" +
+                         Environment.NewLine +
+                         "temperature64 | Kelvin64 | global::System.Double | temperature=1";
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, catalog);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                diagnostics.Select(SpanText),
+                Is.EquivalentTo(new[] { "Vector<Kelvin64> wrongLow", "Vector<double> rawLow" }));
+            Assert.That(
+                diagnostics.Select(diagnostic => diagnostic.GetMessage()),
+                Is.EquivalentTo(new[]
+                {
+                    "Cannot assign 'length^-1 mass^1 time^-2' to 'temperature'",
+                    "Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'"
+                }));
+        });
+    }
+
+    [Test]
+    public async Task VectorOperandsDoNotDependOnParameterNames()
+    {
+        // A local copy of Vector128 with renamed parameters takes the place of the BCL class (CS0436). The rules must
+        // still find the condition, the sign source, the index, and the offset by position and type.
+        const string source = """
+                              using System.Runtime.Intrinsics;
+
+                              namespace System.Runtime.Intrinsics
+                              {
+                                  internal static class Vector128
+                                  {
+                                      public static Vector128<T> ConditionalSelect<T>(
+                                          Vector128<T> selector, Vector128<T> whenTrue, Vector128<T> whenFalse) => whenTrue;
+
+                                      public static Vector128<T> CopySign<T>(Vector128<T> magnitude, Vector128<T> signSource) =>
+                                          magnitude;
+
+                                      public static T GetElement<T>(Vector128<T> lanes, int position) => default!;
+
+                                      public static Vector128<T> LoadUnsafe<T>(ref T origin, nuint at) => default;
+
+                                      public static Vector128<T> Min<T>(Vector128<T> first, Vector128<T> second) => first;
+
+                                      public static int OnlyInTheLocalCopy() => 0;
+                                  }
+                              }
+
+                              internal static class Lanes
+                              {
+                                  internal static void Run(Vector128<Pascal> p, Vector128<Kelvin> t, Pascal[] pressures)
+                                  {
+                                      _ = Vector128.OnlyInTheLocalCopy();
+                                      Vector128<Pascal> selected = Vector128.ConditionalSelect(t, p, p);
+                                      _ = Vector128.ConditionalSelect(t, p, t);
+                                      Vector128<Pascal> signed = Vector128.CopySign(p, t);
+                                      Pascal element = Vector128.GetElement(p, 3);
+                                      Kelvin wrongElement = Vector128.GetElement(p, 3);
+                                      Vector128<Kelvin> wrongLoad = Vector128.LoadUnsafe(ref pressures[0], 4);
+                                      _ = Vector128.Min(p, t);
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(
+            diagnostics.Select(diagnostic => diagnostic.Id + " " + SpanText(diagnostic)),
+            Is.EquivalentTo(new[]
+            {
+                "QNT003 t",
+                "QNT002 Vector128.GetElement(p, 3)",
+                "QNT002 Vector128.LoadUnsafe(ref pressures[0], 4)",
+                "QNT003 t"
+            }));
+    }
+
+    [Test]
+    public async Task IntegerLaneIndexesAreNotOperands()
+    {
+        const string source = """
+                              using System.Numerics;
+                              using System.Runtime.Intrinsics;
+
+                              internal static class Lanes
+                              {
+                                  internal static void Run(Vector128<Cells> cells, Ticks[] ticks, Cells[] counts, Ticks at)
+                                  {
+                                      Cells element = Vector128.GetElement(cells, at);
+                                      Vector<Cells> loaded = new Vector<int>(counts, at);
+                                      Vector<Ticks> wrongLoad = new Vector<int>(counts, at);
+                                      _ = Vector128.Create(element, element, element, ticks[0]);
+                                  }
+                              }
+                              """;
+
+        const string catalog = """
+                               cells | Cells | global::System.Int32 | cell=1
+                               ticks | Ticks | global::System.Int32 | tick=1
+                               """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, catalog);
+
+        Assert.That(
+            diagnostics.Select(diagnostic => diagnostic.Id + " " + SpanText(diagnostic)),
+            Is.EquivalentTo(new[] { "QNT002 new Vector<int>(counts, at)", "QNT003 ticks[0]" }));
+    }
+
+    [Test]
+    public async Task HardwareIntrinsicsAreUnknown()
+    {
+        const string source = """
+                              using System.Runtime.Intrinsics;
+                              using System.Runtime.Intrinsics.X86;
+
+                              internal static class Lanes
+                              {
+                                  internal static void Run(Vector256<Pascal> p, Vector256<Kelvin> t)
+                                  {
+                                      Vector256<Kelvin> sum = Avx.Add(p, t);
+                                      Vector256<Pascal> product = Avx.Multiply(p, t);
+                                  }
+                              }
+                              """;
+
+        ImmutableArray<Diagnostic> diagnostics = await Analyze(source, Catalog);
+
+        Assert.That(diagnostics, Is.Empty);
+    }
+
     private static async Task<ImmutableArray<Diagnostic>> Analyze(
         string source, string catalog,
         params MetadataReference[] references)

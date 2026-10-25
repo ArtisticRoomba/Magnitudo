@@ -64,6 +64,32 @@ unannotated parameter, which accepts anything. An alias-typed field fails the ot
 library's `Kelvin` field reports [QNT002](diagnostics.md#qnt002) against `unannotated scalar`. Put `[Quantity]` or
 `[ElementQuantity]` on public API.
 
+## A hoisted vector constant is not a literal
+
+`new Vector<float>(0.5f)` is a literal, but a local that holds it is not:
+
+```csharp
+Vector<float> half = new Vector<float>(0.5f);
+Vector<Pascal> mean = half * (a + b);   // half is unknown, so the product is unknown and unchecked
+```
+
+The assignment to `mean` passes because an unknown value can claim a unit. The analyzer has stopped checking that
+expression without a message. Declare the factor with a dimensionless alias, `Vector<Ratio> half`, or write the
+broadcast inline. A hoisted `Vector<float> zero` does no harm in comparisons and in `ConditionalSelect`, because those
+take their quantity from the other operand.
+
+## Shared scratch buffers reject quantity vectors
+
+A store into a plain `float[]` or `Span<float>` is [QNT002](diagnostics.md#qnt002), as `raw[i] = pressure` is. Vector
+kernels often spill several quantities through one scratch span. Give each quantity its own typed span, such as
+`Span<Pascal>`, or suppress QNT002 around the spill.
+
+## `Widen` checks both halves
+
+`Vector.Widen(p, out low, out high)` assigns the lanes of `p` to `low` and `high`. Both must accept the quantity of
+`p`, so `out Vector<Pascal64> low` passes and `out Vector<double> low` is QNT002. Narrowing goes through
+`Vector.Narrow`, which keeps the quantity.
+
 ## Downgraded rules fail again under `-warnaserror`
 
 Setting a rule to `warning` in `.editorconfig` does not help a build that uses `-warnaserror`. Set it to `none` or

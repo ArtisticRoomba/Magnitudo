@@ -68,8 +68,8 @@ A dimensionless `Ratio` is a quantity, so `d + r` fails with `cannot combine 'le
 
 `Cannot assign '{0}' to '{1}'`
 
-The analyzer reports this on an assignment, an initializer, or a compound assignment. The message names the value
-first and the target second.
+The analyzer reports this on an assignment, an initializer, a compound assignment, or a vector store. The message
+names the value first and the target second.
 
 ```csharp
 Kelvin temperature = pressure;
@@ -97,6 +97,19 @@ var inferred = pressure;
 ```
 
 Declare the alias type: `Pascal inferred = pressure;`. Dimensionless values and discards are exempt.
+
+A vector store is an assignment of each lane, and so is each `out` argument of `Vector.Widen`:
+
+```csharp
+Vector<Pascal> p = new Vector<float>(pressures);
+p.CopyTo(temperatures);
+// error QNT002: Cannot assign 'length^-1 mass^1 time^-2' to 'temperature'
+
+Vector.Widen(p, out Vector<double> low, out Vector<double> high);
+// error QNT002 on each out argument: Cannot assign 'length^-1 mass^1 time^-2' to 'unannotated scalar'
+```
+
+Here `pressures` is a `Pascal[]` and `temperatures` is a `Kelvin[]`. Declare the halves as `Vector<Pascal64>`.
 
 ## QNT003
 
@@ -130,6 +143,10 @@ Math.Max(pressure, temperature);
 ```
 
 Generated conversions carry quantities too, so `UnitConversions.ToCelsius(pressure)` fails the same way.
+
+Vector helpers such as `Vector.Min`, `Vector.ConditionalSelect`, and `Vector.LessThan` follow the same rule. The
+[helper table](how-it-works.md#vector-helper-methods) lists them. For `FusedMultiplyAdd(a, b, c)`, the addend `c` must
+match the product $[a][b]$.
 
 ## QNT004
 

@@ -17,6 +17,7 @@ static float Total(Pascal pressure, Kelvin temperature) => pressure + temperatur
 
 - Zero runtime cost: a `Kelvin` is a `float` in the compiled assembly
 - Arrays stay primitive arrays, so SIMD, spans, and interop work as usual
+- SIMD code is checked too: a `Vector<Pascal>` is a pressure, lane by lane
 - Native AOT and trimming are unaffected
 - Dimensions are integer exponent vectors over any base names you choose, not a fixed SI set
 - Several storage types per quantity (`Kelvin` and `Kelvin64`)
